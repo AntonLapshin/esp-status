@@ -1,6 +1,6 @@
 #pragma once
 #include <Arduino.h>
-#include <TFT_eSPI.h>
+#include <Adafruit_ST7789.h>
 
 struct EspStatus {
   bool ok = false;
@@ -21,5 +21,5 @@ struct EspStatus {
 uint16_t statusColor(const String& s);
 String fmtAgo(long ago_s);
 String fmtTokens(long n);
-void uiBoot(TFT_eSPI& tft, const String& ssid);
-void uiDraw(TFT_eSPI& tft, const EspStatus& st, const String& errMsg);
+void uiBoot(Adafruit_ST7789& tft, const String& ssid);
+void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg);

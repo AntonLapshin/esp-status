@@ -12,8 +12,9 @@
 | BL (backlight) | 32 |
 
 170×320 px, portrait (`tft.setRotation(0)`), ST7789 driver with inversion on.
-Build flags for both toolchains live in `firmware/platformio.ini`
-(`build-arduino-cli.sh` passes the same `-D` flags to arduino-cli).
+Display library: `Adafruit_ST7789` + `Adafruit_GFX` (pins in `main.cpp`:
+`MOSI=23, SCLK=18, CS=15, DC=2, RST=4, BL=32`; `tft.init(170,320)` +
+`invertDisplay(true)`). No `TFT_eSPI` setup flags needed.
 
 ## USB / drivers
 

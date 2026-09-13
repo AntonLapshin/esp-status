@@ -1,11 +1,22 @@
 #include "ui.h"
 #include "config.h"
 
+#define COL_BLACK 0x0000
+#define COL_WHITE 0xFFFF
+#define COL_GREEN 0x07E0
+#define COL_YELLOW 0xFFE0
+#define COL_RED 0xF800
+#define COL_CYAN 0x07FF
+#define COL_GREY 0x8410
+#define COL_LGREY 0xC618
+#define COL_DGREY 0x7BEF
+#define COL_FOOTER_BG 0x2104
+
 uint16_t statusColor(const String& s) {
-  if (s == "green") return 0x07E0;
-  if (s == "yellow") return 0xFFE0;
-  if (s == "red") return 0xF800;
-  return 0x8410; // grey
+  if (s == "green") return COL_GREEN;
+  if (s == "yellow") return COL_YELLOW;
+  if (s == "red") return COL_RED;
+  return COL_GREY; // grey / offline
 }
 
 String fmtAgo(long ago_s) {
@@ -21,79 +32,100 @@ String fmtTokens(long n) {
   return String(n);
 }
 
-void uiBoot(TFT_eSPI& tft, const String& ssid) {
-  tft.fillScreen(TFT_BLACK);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextDatum(TC_DATUM);
-  tft.drawString("auto-pi", SCREEN_W / 2, 90, 4);
-  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  tft.drawString("connecting " + ssid, SCREEN_W / 2, 130, 2);
-  tft.setTextDatum(TL_DATUM);
+// Centered text helper (Adafruit GFX has no drawString/datum).
+static void centerText(Adafruit_ST7789& tft, const String& s, int y, uint8_t size) {
+  tft.setTextSize(size);
+  int16_t x1, y1;
+  uint16_t w, h;
+  tft.getTextBounds(s, 0, y, &x1, &y1, &w, &h);
+  tft.setCursor((SCREEN_W - (int)w) / 2, y);
+  tft.print(s);
 }
 
-// Wrap helper: draw up to 2 lines of the "last" text.
-static void drawLast(TFT_eSPI& tft, const String& last) {
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  String a = last.substring(0, 22);
-  String b = last.length() > 22 ? last.substring(22, 44) : "";
-  tft.drawString(a, 8, 176, 2);
-  if (b.length()) tft.drawString(b, 8, 194, 2);
+void uiBoot(Adafruit_ST7789& tft, const String& ssid) {
+  tft.fillScreen(COL_BLACK);
+  tft.setTextColor(COL_WHITE, COL_BLACK);
+  tft.setTextWrap(false);
+  centerText(tft, "auto-pi", 90, 3);
+  tft.setTextColor(COL_DGREY, COL_BLACK);
+  String sub = "connecting " + ssid;
+  if (sub.length() > 28) sub = sub.substring(0, 28);
+  centerText(tft, sub, 135, 1);
 }
 
-void uiDraw(TFT_eSPI& tft, const EspStatus& st, const String& errMsg) {
-  uint16_t c = statusColor(st.status);
-  tft.fillScreen(TFT_BLACK);
+static void drawLast(Adafruit_ST7789& tft, const String& last) {
+  tft.setTextColor(COL_WHITE, COL_BLACK);
+  tft.setTextSize(1);
+  String a = last.substring(0, 28);
+  String b = last.length() > 28 ? last.substring(28, 56) : "";
+  tft.setCursor(8, 178);
+  tft.print(a);
+  if (b.length()) {
+    tft.setCursor(8, 190);
+    tft.print(b);
+  }
+}
 
-  // Top bar: project + loop state
+void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg) {
+  uint16_t c = statusColor(st.offline ? "grey" : st.status);
+  tft.fillScreen(COL_BLACK);
+  tft.setTextWrap(false);
+
+  // Top bar: project name
   tft.fillRect(0, 0, SCREEN_W, 26, c);
-  tft.setTextColor(TFT_BLACK, c);
-  tft.setTextDatum(TC_DATUM);
+  tft.setTextColor(COL_BLACK, c);
   String title = st.proj.length() ? st.proj : "auto-pi";
-  if (title.length() > 20) title = title.substring(0, 20);
-  tft.drawString(title, SCREEN_W / 2, 5, 2);
-  tft.setTextDatum(TL_DATUM);
+  if (title.length() > 14) title = title.substring(0, 14);
+  centerText(tft, title, 6, 2);
 
   // Big status dot + label
-  tft.fillCircle(SCREEN_W / 2, 78, 30, c);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextDatum(TC_DATUM);
+  tft.fillCircle(SCREEN_W / 2, 72, 28, c);
+  tft.setTextColor(COL_WHITE, COL_BLACK);
   String label = st.offline ? "OFFLINE" : st.status;
   label.toUpperCase();
-  tft.drawString(label, SCREEN_W / 2, 116, 4);
-  tft.setTextDatum(TL_DATUM);
+  centerText(tft, label, 110, 3);
 
-  // Persona + ago
-  tft.setTextColor(0xC618 /* light grey */, TFT_BLACK);
-  tft.drawString("persona:", 8, 142, 2);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  // Persona + ago (size 1 fits 28 chars)
+  tft.setTextSize(1);
+  tft.setTextColor(COL_LGREY, COL_BLACK);
+  tft.setCursor(8, 142);
+  tft.print("persona:");
+  tft.setTextColor(COL_CYAN, COL_BLACK);
   String p = st.persona.length() ? st.persona : "-";
-  if (p.length() > 14) p = p.substring(0, 14);
-  tft.drawString(p + "  " + fmtAgo(st.ago_s), 66, 142, 2);
+  if (p.length() > 12) p = p.substring(0, 12);
+  tft.setCursor(62, 142);
+  tft.print(p + " " + fmtAgo(st.ago_s));
 
   // Last activity
-  tft.setTextColor(0xC618, TFT_BLACK);
-  tft.drawString("last:", 8, 160, 2);
+  tft.setTextColor(COL_LGREY, COL_BLACK);
+  tft.setCursor(8, 160);
+  tft.print("last:");
   drawLast(tft, st.offline ? errMsg : st.last);
 
   // Stats grid
-  tft.drawLine(0, 222, SCREEN_W, 222, TFT_DARKGREY);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString("RUN " + String(st.runs), 8, 230, 2);
-  tft.setTextColor(0x07E0, TFT_BLACK);
-  tft.drawString("OK " + String(st.ok_n), 8, 248, 2);
-  tft.setTextColor(0xF800, TFT_BLACK);
-  tft.drawString("FAIL " + String(st.fail_n), 8, 266, 2);
-  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-  tft.drawString("TOK " + fmtTokens(st.tok_today), 86, 230, 2);
-  tft.setTextColor(st.loop ? 0x07E0 : 0xF800, TFT_BLACK);
-  tft.drawString(st.loop ? "LOOP ON" : "LOOP OFF", 86, 248, 2);
-  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  tft.drawString("ERR " + String(st.err), 86, 266, 2);
+  tft.drawFastHLine(0, 214, SCREEN_W, COL_DGREY);
+  tft.setTextSize(1);
+  tft.setTextColor(COL_WHITE, COL_BLACK);
+  tft.setCursor(8, 222);
+  tft.print("RUN " + String(st.runs));
+  tft.setTextColor(COL_GREEN, COL_BLACK);
+  tft.setCursor(8, 238);
+  tft.print("OK " + String(st.ok_n));
+  tft.setTextColor(COL_RED, COL_BLACK);
+  tft.setCursor(8, 254);
+  tft.print("FAIL " + String(st.fail_n));
+  tft.setTextColor(COL_YELLOW, COL_BLACK);
+  tft.setCursor(90, 222);
+  tft.print("TOK " + fmtTokens(st.tok_today));
+  tft.setTextColor(st.loop ? COL_GREEN : COL_RED, COL_BLACK);
+  tft.setCursor(90, 238);
+  tft.print(st.loop ? "LOOP ON" : "LOOP OFF");
+  tft.setTextColor(COL_DGREY, COL_BLACK);
+  tft.setCursor(90, 254);
+  tft.print("ERR " + String(st.err));
 
   // Footer
-  tft.fillRect(0, SCREEN_H - 20, SCREEN_W, 20, 0x2104);
-  tft.setTextColor(0xC618, 0x2104);
-  tft.setTextDatum(TC_DATUM);
-  tft.drawString(st.offline ? "poll failed - retrying" : "poll 15s :8787", SCREEN_W / 2, SCREEN_H - 17, 1);
-  tft.setTextDatum(TL_DATUM);
+  tft.fillRect(0, SCREEN_H - 20, SCREEN_W, 20, COL_FOOTER_BG);
+  tft.setTextColor(COL_LGREY, COL_FOOTER_BG);
+  centerText(tft, st.offline ? "poll failed - retry" : "poll 15s :8787", SCREEN_H - 14, 1);
 }

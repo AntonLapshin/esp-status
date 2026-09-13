@@ -1,12 +1,21 @@
 #include <Arduino.h>
+#include <SPI.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
-#include <TFT_eSPI.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_ST7789.h>
 #include "config.h"
 #include "ui.h"
 
-TFT_eSPI tft;
+// IdeaSpark 1.9" ST7789 (fixed on-board): MOSI=23 SCLK=18 CS=15 DC=2 RST=4 BL=32
+#define TFT_CS 15
+#define TFT_DC 2
+#define TFT_RST 4
+#define TFT_MOSI 23
+#define TFT_SCLK 18
+
+Adafruit_ST7789 tft(TFT_CS, TFT_DC, TFT_RST);
 EspStatus current;
 String lastErr = "boot";
 unsigned long lastPoll = 0;
@@ -58,9 +67,11 @@ void setup() {
   pinMode(LCD_BL_PIN, OUTPUT);
   digitalWrite(LCD_BL_PIN, HIGH);
 
-  tft.init();
+  SPI.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);
+  tft.init(SCREEN_W, SCREEN_H);
   tft.setRotation(0); // portrait 170x320
-  tft.fillScreen(TFT_BLACK);
+  tft.invertDisplay(true);
+  tft.fillScreen(ST77XX_BLACK);
   uiBoot(tft, WIFI_SSID);
 
   Serial.println("\nesp-status boot");
