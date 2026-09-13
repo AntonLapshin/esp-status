@@ -1,0 +1,8 @@
+.pio/
+.pioenvs/
+.piolibdeps/
+.cache/
+build/
+*.bin
+*.elf
+.DS_Store
