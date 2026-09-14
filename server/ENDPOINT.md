@@ -32,7 +32,7 @@ GET http://<DEV-LAN-IP>:8787/api/esp-status
 |---|---|---|
 | `proj` | header: project name | active project name (max 24 chars) |
 | `loop` | header: `ON` / `OFF` badge | `.pi/state/loop.lock` liveness |
-| `status` | pulsating dot: `green` / `red` | green = loop on + fresh activity (≤ 15 min) + last run not an error; else red |
+| `status` | pulsating dot: `green` / `red` | green = loop on + last run healthy + (a persona actively running OR fresh activity ≤ 15 min); else red |
 | `provider` | `PROVIDER` line | effective pi provider (config → `PI_*` env → pi settings → pi `auth.json` → env hint) |
 | `succ`, `total` | `SUCCESS` gauge (`74/99 74%`) | successful / total LLM calls from `health.jsonl` |
 | `persona` | `PERSONA` hero glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`, …) | active persona (started run wins, else last run) |
