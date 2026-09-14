@@ -2,7 +2,7 @@
 
 Live implementation: `auto-pi/ui/server/server.js` → `buildEspStatus()`.
 
-Tiny aggregated JSON for ESP32 polling over LAN (~240 bytes, `Cache-Control: no-store`).
+Tiny aggregated JSON for ESP32 polling over LAN (~260 bytes, `Cache-Control: no-store`).
 Full dashboards should use `/api/status` instead.
 
 ## Request
@@ -11,36 +11,42 @@ Full dashboards should use `/api/status` instead.
 GET http://<DEV-LAN-IP>:8787/api/esp-status
 ```
 
-## Response 200
+## Response 200 (v3)
 
 ```json
 {
   "ok": true,
-  "status": "green",
-  "loop": true,
-  "persona": "engineer",
-  "last": "dispatch review: PR #52 ready for review",
-  "ago_s": 47,
-  "runs": 12,
-  "ok_n": 10,
-  "fail_n": 1,
-  "tok_today": 184500,
-  "err": 0,
   "proj": "timeline",
+  "loop": true,
+  "status": "green",
+  "provider": "joingonka",
+  "succ": 74,
+  "total": 99,
+  "persona": "engineer",
+  "ago_s": 47,
   "at": "2026-09-13T18:32:38.206Z"
 }
 ```
 
-| Field | Source |
-|---|---|
-| `status` | green: loop on + `ago_s` ≤ 300; yellow: ≤ 900; red: loop off / recent error / stale / no data |
-| `loop` | `.pi/state/loop.lock` liveness |
-| `persona`, `last` | last `runs.jsonl` record (`persona`, `reason` truncated to 40 chars, fallback: latest event type) |
-| `ago_s` | seconds since last run/event (`-1` = never) |
-| `runs`, `ok_n`, `fail_n` | today's runs from `runs.jsonl` |
-| `tok_today` | today's tokens from `usage.jsonl` |
-| `err` | total `errors.jsonl` records |
-| `proj` | active project name (max 24 chars) |
+| Field | UI element | Source |
+|---|---|---|
+| `proj` | header: project name | active project name (max 24 chars) |
+| `loop` | header: `ON` / `OFF` badge | `.pi/state/loop.lock` liveness |
+| `status` | pulsating dot: `green` / `red` | green = loop on + fresh activity (≤ 15 min) + last run not an error; else red |
+| `provider` | `PROVIDER` line | effective pi provider (config → `PI_*` env → pi settings → pi `auth.json` → env hint) |
+| `succ`, `total` | `SUCCESS` gauge (`74/99 74%`) | successful / total LLM calls from `health.jsonl` |
+| `persona` | `PERSONA` hero glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`, …) | active persona (started run wins, else last run) |
+| `ago_s` | freshness (`47s ago`, footer) | seconds since last run/event (`-1` = never) |
+
+Legacy fields (`last`, `runs`, `ok_n`, `fail_n`, `tok_today`, `err`) are still
+sent so pre-v3 firmware keeps working, but v3 firmware no longer displays them.
+
+## Display mapping (firmware)
+
+- Dot: `green` = healthy loop, `red` = stopped / stale / recent error.
+  `grey` is ESP-side only (WiFi/HTTP failed).
+- Persona colors: PM gold, engineer cyan, QA green, review magenta.
+- Gauge: green ≥ 90 %, yellow ≥ 60 %, red below.
 
 ## Errors
 

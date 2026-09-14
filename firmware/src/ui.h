@@ -2,30 +2,39 @@
 #include <Arduino.h>
 #include <Adafruit_ST7789.h>
 
+// v3 layout contract (see server/ENDPOINT.md):
+//   Project (Loop) / GREEN-RED pulsating dot / Provider / GAUGE succ-total / Persona
 struct EspStatus {
   bool ok = false;
-  String status = "grey";   // green|yellow|red|grey
+  String proj = "";
   bool loop = false;
-  String persona = "-";
-  String last = "waiting...";
+  String status = "red";   // green|red (server-side); grey only while offline
+  String provider = "-";   // effective LLM provider (e.g. joingonka)
+  long succ = 0;           // successful LLM calls (gauge numerator)
+  long total = 0;          // total LLM calls (gauge denominator)
+  String persona = "-";    // pm | engineer | qa | review-engineer | ...
   long ago_s = -1;
+  // Legacy fields (pre-v3 payloads): still parsed, no longer displayed.
+  String last = "";
   int runs = 0;
   int ok_n = 0;
   int fail_n = 0;
   long tok_today = 0;
   int err = 0;
-  String proj = "";
   bool offline = true;
 };
 
 uint16_t statusColor(const String& s);
 String fmtAgo(long ago_s);
-String fmtTokens(long n);
+// "pm" -> "PM", "review-engineer" -> "REVIEW", ... (uppercase, truncated).
+String personaDisplay(const String& persona);
+// Accent color per role: PM gold, engineer cyan, QA green, review magenta.
+uint16_t personaColor(const String& persona);
 void uiBoot(Adafruit_ST7789& tft, const String& ssid);
 // Small boot-line update (no full wipe) — used while connecting to WiFi.
 void uiBootStatus(Adafruit_ST7789& tft, const String& msg);
 // Differential redraw: full frame once, then only dirty rects (no flicker).
 void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg);
-// Animation frame (~25fps, no fillScreen): pulse rings + poll progress bar.
+// Animation frame (~25fps, no fillScreen): pulsating dot + poll progress bar.
 void uiTick(Adafruit_ST7789& tft, const EspStatus& st,
             unsigned long nowMs, unsigned long lastPollMs);

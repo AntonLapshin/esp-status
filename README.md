@@ -1,9 +1,9 @@
 # esp-status — auto-pi pocket monitor for ESP32
 
 IdeaSpark ESP32 (16 MB + 1.9" ST7789 170×320 LCD) shows the live status of your
-autonomous `auto-pi` loop: green / yellow / red, active persona, last activity
-and how long ago, run counters and token usage. It polls a tiny JSON endpoint
-over your home WiFi every 15 seconds.
+autonomous `auto-pi` loop: project + loop badge, a pulsating green/red dot,
+the LLM provider, a success-rate gauge and the active persona hero glyph. It
+polls a tiny JSON endpoint over your home WiFi every 15 seconds.
 
 ```
 auto-pi loop (DEV machine) → .pi/logs/*.jsonl → ui/server :8787/api/esp-status
@@ -34,11 +34,11 @@ Find the DEV machine's LAN IP:
 hostname -I   # e.g. 192.168.1.50 — use the 192.168.x.x / 10.x.x.x one
 ```
 
-Verify the ESP endpoint (expect ~240 bytes of JSON):
+Verify the ESP endpoint (expect ~260 bytes of JSON):
 
 ```bash
 curl http://localhost:8787/api/esp-status
-# {"ok":true,"status":"green","loop":true,"persona":"engineer","last":"...","ago_s":47,...}
+# {"ok":true,"proj":"timeline","loop":true,"status":"green","provider":"joingonka","succ":74,"total":99,"persona":"engineer","ago_s":47,...}
 ```
 
 > Firewall: port `8787` must be reachable from the LAN. If `curl http://<DEV-LAN-IP>:8787/api/esp-status`
@@ -48,10 +48,14 @@ Status colors (decided server-side, ESP just draws them):
 
 | Color | Meaning |
 |---|---|
-| 🟢 green | Loop running, activity < 5 min ago |
-| 🟡 yellow | Loop running, activity 5–15 min ago |
+| 🟢 green | Loop running, activity < 15 min ago, last run healthy |
 | 🔴 red | Loop stopped, recent error, or stale > 15 min |
 | ⚫ grey | ESP offline (WiFi/HTTP failed) — ESP-side only |
+
+Screen layout (v3, top → bottom): header bar with project name + `ON`/`OFF`
+loop badge · pulsating dot + `GREEN`/`RED` · `PROVIDER` (e.g. `joingonka`) ·
+`SUCCESS` gauge (`74/99 74%`) · `PERSONA` hero glyph (`PM`, `ENGINEER`, `QA`,
+`REVIEW`, …) + freshness (`47s ago`) · footer with poll countdown.
 
 ## 2. HOST machine — get this repo
 
@@ -135,11 +139,11 @@ pio device monitor -b 115200
 
 ## 7. What you should see
 
-1. LCD shows `auto-pi / connecting <SSID>`, then your project name in the top bar.
-2. Big colored dot + `GREEN`/`YELLOW`/`RED`, persona (`engineer`, `pm`, …) and `47s ago`.
-3. `last:` line = last loop activity (e.g. `pr.created #42`, `dispatch review…`).
-4. Stats grid: `RUN / OK / FAIL / TOK / LOOP ON|OFF / ERR`.
-5. Serial log prints `ok green engineer 47s` each poll.
+1. LCD shows `esp-status v3 / connecting <SSID>`, then your project name in the top bar with the `ON`/`OFF` loop badge.
+2. Big pulsating dot + `GREEN`/`RED`.
+3. `PROVIDER` line (e.g. `joingonka`) and `SUCCESS` gauge (`74/99 74%`).
+4. `PERSONA` hero glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`) + freshness (`47s ago`).
+5. Serial log prints `ok green timeline joingonka 74/99 engineer 47s` each poll.
 
 ## Troubleshooting
 
@@ -159,7 +163,7 @@ esp-status/
   README.md                  ← you are here
   firmware/
     src/main.cpp             ← WiFi + HTTP poll + loop
-    src/ui.{h,cpp}           ← 170×320 portrait renderer
+    src/ui.{h,cpp}           ← 170×320 portrait renderer (v3 layout)
     src/config.h             ← WiFi + SERVER_URL (edit me)
     platformio.ini           ← PlatformIO build (ST7789 flags)
     build-arduino-cli.sh     ← arduino-cli build/upload script

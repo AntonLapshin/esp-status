@@ -52,17 +52,23 @@ bool fetchStatus(EspStatus& out, String& errMsg) {
   if (e) { errMsg = "json " + String(e.c_str()); return false; }
 
   out.ok = doc["ok"] | false;
-  out.status = String((const char*)(doc["status"] | "grey"));
+  out.proj = String((const char*)(doc["proj"] | ""));
   out.loop = doc["loop"] | false;
+  // v3 contract is binary GREEN/RED; map legacy yellow/grey to red.
+  String s = String((const char*)(doc["status"] | "red"));
+  out.status = (s == "green") ? "green" : "red";
+  out.provider = String((const char*)(doc["provider"] | "-"));
+  out.succ = doc["succ"] | 0;
+  out.total = doc["total"] | 0;
   out.persona = String((const char*)(doc["persona"] | "-"));
-  out.last = String((const char*)(doc["last"] | "-"));
   out.ago_s = doc["ago_s"] | -1;
+  // Legacy pre-v3 fields (still parsed for compat / serial log).
+  out.last = String((const char*)(doc["last"] | "-"));
   out.runs = doc["runs"] | 0;
   out.ok_n = doc["ok_n"] | 0;
   out.fail_n = doc["fail_n"] | 0;
   out.tok_today = doc["tok_today"] | 0;
   out.err = doc["err"] | 0;
-  out.proj = String((const char*)(doc["proj"] | ""));
   out.offline = false;
   return true;
 }
@@ -82,7 +88,10 @@ static void doPoll() {
   if (fetchStatus(next, err)) {
     current = next;
     uiDraw(tft, current, "");
-    Serial.printf("ok %s %s %lds\n", current.status.c_str(), current.persona.c_str(), current.ago_s);
+    Serial.printf("ok %s %s %s %ld/%ld %s %lds\n", current.status.c_str(),
+                  current.proj.c_str(), current.provider.c_str(),
+                  current.succ, current.total,
+                  current.persona.c_str(), current.ago_s);
   } else {
     current.offline = true;
     lastErr = err.substring(0, 22);
