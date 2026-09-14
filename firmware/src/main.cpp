@@ -15,19 +15,25 @@
 #define TFT_MOSI 23
 #define TFT_SCLK 18
 
+#define TICK_MS 40
+
 Adafruit_ST7789 tft(TFT_CS, TFT_DC, TFT_RST);
 EspStatus current;
 String lastErr = "boot";
 unsigned long lastPoll = 0;
-bool firstDraw = true;
+unsigned long lastTick = 0;
 
 void connectWifi() {
   if (WiFi.status() == WL_CONNECTED) return;
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   unsigned long t0 = millis();
+  int dots = 0;
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < WIFI_TIMEOUT_MS) {
     delay(250);
+    dots = (dots + 1) % 4;
+    String msg = "connecting " + String(WIFI_SSID) + String("...").substring(0, dots);
+    uiBootStatus(tft, msg);
   }
 }
 
@@ -61,38 +67,7 @@ bool fetchStatus(EspStatus& out, String& errMsg) {
   return true;
 }
 
-void setup() {
-  Serial.begin(115200);
-  delay(200);
-  pinMode(LCD_BL_PIN, OUTPUT);
-  digitalWrite(LCD_BL_PIN, HIGH);
-
-  SPI.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);
-  tft.init(SCREEN_W, SCREEN_H);
-  tft.setRotation(0); // portrait 170x320
-  tft.invertDisplay(true);
-  tft.fillScreen(ST77XX_BLACK);
-  uiBoot(tft, WIFI_SSID);
-
-  Serial.println("\nesp-status boot");
-  connectWifi();
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("IP: ");
-    Serial.println(WiFi.localIP());
-  } else {
-    Serial.println("WiFi failed");
-    current.offline = true;
-    lastErr = "wifi fail";
-    uiDraw(tft, current, lastErr);
-  }
-}
-
-void loop() {
-  unsigned long now = millis();
-  if (!firstDraw && now - lastPoll < POLL_MS) { delay(200); return; }
-  firstDraw = false;
-  lastPoll = now;
-
+static void doPoll() {
   if (WiFi.status() != WL_CONNECTED) connectWifi();
   if (WiFi.status() != WL_CONNECTED) {
     current.offline = true;
@@ -114,4 +89,54 @@ void loop() {
     uiDraw(tft, current, lastErr);
     Serial.println("poll fail: " + err);
   }
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(200);
+  pinMode(LCD_BL_PIN, OUTPUT);
+  digitalWrite(LCD_BL_PIN, HIGH);
+
+  SPI.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);
+  tft.init(SCREEN_W, SCREEN_H);
+  tft.setRotation(DISPLAY_ROTATION); // 2 = flipped 180 deg (vertical flip)
+  tft.invertDisplay(true);
+  tft.fillScreen(ST77XX_BLACK);
+  uiBoot(tft, WIFI_SSID);
+
+  Serial.println("\nesp-status boot");
+  connectWifi();
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("IP: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("WiFi failed");
+    current.offline = true;
+    lastErr = "wifi fail";
+    uiDraw(tft, current, lastErr);
+  }
+  lastPoll = millis();
+  lastTick = millis();
+  // First data frame immediately (uiDraw does the one full paint;
+  // later polls only patch dirty rects, so no 15s full-screen wipe).
+  doPoll();
+  lastPoll = millis();
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  // Poll every POLL_MS (non-blocking — animation keeps running).
+  if (now - lastPoll >= POLL_MS) {
+    lastPoll = now;
+    doPoll();
+  }
+
+  // Animation frame: breathing halo + poll countdown bar. Tiny shapes only.
+  if (now - lastTick >= TICK_MS) {
+    lastTick = now;
+    uiTick(tft, current, now, lastPoll);
+  }
+
+  delay(5);
 }

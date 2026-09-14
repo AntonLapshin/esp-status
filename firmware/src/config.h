@@ -16,3 +16,6 @@
 #define LCD_BL_PIN 32
 #define SCREEN_W 170
 #define SCREEN_H 320
+// 0 = native USB-top orientation, 2 = flipped 180 deg (vertical flip).
+// Use 2 when the device is mounted upside-down.
+#define DISPLAY_ROTATION 2

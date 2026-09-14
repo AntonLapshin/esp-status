@@ -22,4 +22,10 @@ uint16_t statusColor(const String& s);
 String fmtAgo(long ago_s);
 String fmtTokens(long n);
 void uiBoot(Adafruit_ST7789& tft, const String& ssid);
+// Small boot-line update (no full wipe) — used while connecting to WiFi.
+void uiBootStatus(Adafruit_ST7789& tft, const String& msg);
+// Differential redraw: full frame once, then only dirty rects (no flicker).
 void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg);
+// Animation frame (~25fps, no fillScreen): pulse rings + poll progress bar.
+void uiTick(Adafruit_ST7789& tft, const EspStatus& st,
+            unsigned long nowMs, unsigned long lastPollMs);
