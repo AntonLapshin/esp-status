@@ -2,8 +2,9 @@
 #include <Arduino.h>
 #include <Adafruit_ST7789.h>
 
-// v3 layout contract (see server/ENDPOINT.md):
-//   Project (Loop) / GREEN-RED pulsating dot / Provider / GAUGE succ-total / Persona
+// v4 layout contract (see server/ENDPOINT.md):
+//   Project (Loop) / tiny static status dot / Provider (large) / speedometer
+//   gauge (succ/total, no text) / Persona glyph + freshness (large, no footer)
 struct EspStatus {
   bool ok = false;
   String proj = "";
@@ -35,6 +36,6 @@ void uiBoot(Adafruit_ST7789& tft, const String& ssid);
 void uiBootStatus(Adafruit_ST7789& tft, const String& msg);
 // Differential redraw: full frame once, then only dirty rects (no flicker).
 void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg);
-// Animation frame (~25fps, no fillScreen): pulsating dot + poll progress bar.
+// Static layout — no animation frame needed. Kept as a no-op for API compat.
 void uiTick(Adafruit_ST7789& tft, const EspStatus& st,
             unsigned long nowMs, unsigned long lastPollMs);

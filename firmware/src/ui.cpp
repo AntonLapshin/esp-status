@@ -17,38 +17,28 @@
 #define COL_GREY 0x8410
 #define COL_LGREY 0xC618
 #define COL_DGREY 0x7BEF
-#define COL_FOOTER_BG 0x2104
-#define COL_BAR_BG 0x18E3
 #define COL_GAUGE_BG 0x18E3
 
-// Layout v3 (170x320 portrait, works for rotation 0 and 2)
+// Layout v4 (170x320 portrait, works for rotation 0 and 2)
 //   header  -> project + LOOP badge
-//   hero    -> pulsating dot + GREEN/RED label
-//   provider / gauge / persona stack
-//   footer  -> poll countdown + freshness
+//   tiny static status dot (no pulse, no GREEN/RED label)
+//   provider (large) / speedometer gauge (no text) / persona glyph + ago
+//   (no SUCCESS/PERSONA captions, no footer, no poll bar)
 #define TOP_H 30
-#define BAR_Y TOP_H
-#define BAR_H 4
 #define DOT_CX (SCREEN_W / 2)
-#define DOT_CY 76
-#define DOT_R 26
-#define DOT_ZONE_TOP 42
-#define DOT_ZONE_BOT 110
-#define LABEL_Y 114
-#define LABEL_H 30
-#define PROV_CAP_Y 150
-#define PROV_Y 160
-#define GAUGE_CAP_Y 184
-#define GAUGE_Y 194
-#define GAUGE_H 14
-#define GAUGE_X 14
-#define GAUGE_W (SCREEN_W - 2 * GAUGE_X)
-#define GAUGE_TXT_Y 212
-#define PERS_CAP_Y 236
-#define PERS_Y 246
-#define AGO_Y 280
-#define FOOT_H 20
-#define FOOT_Y (SCREEN_H - FOOT_H)
+#define DOT_CY 50
+#define DOT_R 6
+#define DOT_ZONE_TOP 40
+#define DOT_ZONE_BOT 62
+#define PROV_CAP_Y 70
+#define PROV_Y 82
+#define GAUGE_CX (SCREEN_W / 2)
+#define GAUGE_CY 190
+#define GAUGE_R 54
+#define GAUGE_ZONE_TOP 118
+#define GAUGE_ZONE_BOT 208
+#define PERS_Y 218
+#define AGO_Y 264
 
 uint16_t statusColor(const String& s) {
   if (s == "green") return COL_GREEN;
@@ -82,7 +72,7 @@ uint16_t personaColor(const String& persona) {
   return COL_WHITE;
 }
 
-// Scale an RGB565 color by num/den (for glow / pulse effects).
+// Scale an RGB565 color by num/den (for dimmed gauge zones / dot halo).
 static uint16_t dimColor(uint16_t c, uint8_t num, uint8_t den) {
   uint8_t r = (c >> 11) & 0x1F;
   uint8_t g = (c >> 5) & 0x3F;
@@ -103,20 +93,6 @@ static void centerText(Adafruit_ST7789& tft, const String& s, int y, uint8_t siz
   tft.print(s);
 }
 
-// Clear a horizontal band then print centered text inside it.
-static void centerTextBand(Adafruit_ST7789& tft, const String& s, int y, int h,
-                           uint8_t size, uint16_t fg, uint16_t bg) {
-  tft.fillRect(0, y, SCREEN_W, h, bg);
-  tft.setTextColor(fg, bg);
-  centerText(tft, s, y, size);
-}
-
-static String statusLabel(const EspStatus& st) {
-  String label = st.offline ? "OFFLINE" : st.status;
-  label.toUpperCase();
-  return label;
-}
-
 static String titleText(const EspStatus& st) {
   String title = st.proj.length() ? st.proj : "auto-pi";
   if (title.length() > 10) title = title.substring(0, 10);
@@ -125,7 +101,7 @@ static String titleText(const EspStatus& st) {
 
 static String providerText(const EspStatus& st) {
   String p = st.provider.length() ? st.provider : "-";
-  if (p.length() > 12) p = p.substring(0, 12);
+  if (p.length() > 9) p = p.substring(0, 9); // size-3 text must fit 170px
   return p;
 }
 
@@ -140,23 +116,13 @@ static uint16_t gaugeColor(int pct) {
   return COL_RED;
 }
 
-static String gaugeText(const EspStatus& st) {
-  return String(st.succ) + "/" + String(st.total) + " " + String(successPct(st)) + "%";
-}
-
-// --- hero dot -------------------------------------------------------------
-// Static paint (used by full redraw); the per-frame pulse lives in uiTick.
+// --- tiny static status dot -------------------------------------------------
 static void drawDot(Adafruit_ST7789& tft, uint16_t c) {
-  // Soft outer glow (two dim halos), solid core, glossy highlight.
-  tft.fillCircle(DOT_CX, DOT_CY, DOT_R + 8, dimColor(c, 1, 6));
-  tft.fillCircle(DOT_CX, DOT_CY, DOT_R + 4, dimColor(c, 1, 3));
+  tft.fillCircle(DOT_CX, DOT_CY, DOT_R + 2, dimColor(c, 1, 4));
   tft.fillCircle(DOT_CX, DOT_CY, DOT_R, c);
-  // Gloss: small white specular dot, dimmed so it reads as shine.
-  tft.fillCircle(DOT_CX - 9, DOT_CY - 10, 6, dimColor(COL_WHITE, 3, 4));
-  tft.fillCircle(DOT_CX - 9, DOT_CY - 10, 3, COL_WHITE);
 }
 
-// --- boot -----------------------------------------------------------------
+// --- boot -------------------------------------------------------------------
 void uiBoot(Adafruit_ST7789& tft, const String& ssid) {
   tft.fillScreen(COL_BLACK);
   uint16_t c = COL_CYAN;
@@ -166,7 +132,7 @@ void uiBoot(Adafruit_ST7789& tft, const String& ssid) {
   tft.setTextWrap(false);
   centerText(tft, "esp-status", 122, 3);
   tft.setTextColor(COL_DGREY, COL_BLACK);
-  String sub = "v3 connecting " + ssid;
+  String sub = "v4 connecting " + ssid;
   if (sub.length() > 28) sub = sub.substring(0, 28);
   centerText(tft, sub, 162, 1);
 }
@@ -179,26 +145,22 @@ void uiBootStatus(Adafruit_ST7789& tft, const String& msg) {
   centerText(tft, m, 178, 1);
 }
 
-// --- differential data screen ---------------------------------------------
+// --- differential data screen -----------------------------------------------
 struct Snap {
   String title;
   String loopBadge;
-  String label;
   String provider;
-  String gauge;
-  int gaugeW = -1;
+  int pct = -1;
   uint16_t gaugeC = 0;
   String persona;
   uint16_t personaC = 0;
   uint8_t personaSize = 0;
   String ago;
-  String footer;
   uint16_t color = 0;
   bool offline = true;
   bool valid = false;
 };
 static Snap prev;
-static int prevBarW = -1;
 
 static void drawTopBar(Adafruit_ST7789& tft, const EspStatus& st, uint16_t c) {
   tft.fillRect(0, 0, SCREEN_W, TOP_H, c);
@@ -218,13 +180,6 @@ static void drawTopBar(Adafruit_ST7789& tft, const EspStatus& st, uint16_t c) {
   tft.getTextBounds(b, 0, 0, &x1, &y1, &w, &h);
   tft.setCursor(bx + (bw - (int)w) / 2, by + 5);
   tft.print(b);
-  // Poll progress track under the bar.
-  tft.fillRect(0, BAR_Y, SCREEN_W, BAR_H, COL_BAR_BG);
-  prevBarW = -1; // force progress repaint
-}
-
-static void drawLabel(Adafruit_ST7789& tft, const String& label) {
-  centerTextBand(tft, label, LABEL_Y, LABEL_H, 3, COL_WHITE, COL_BLACK);
 }
 
 static void drawCaption(Adafruit_ST7789& tft, const String& cap, int y) {
@@ -234,24 +189,53 @@ static void drawCaption(Adafruit_ST7789& tft, const String& cap, int y) {
 }
 
 static void drawProvider(Adafruit_ST7789& tft, const EspStatus& st) {
-  tft.fillRect(0, PROV_CAP_Y - 2, SCREEN_W, 30, COL_BLACK);
+  tft.fillRect(0, PROV_CAP_Y - 2, SCREEN_W, PROV_Y + 26 - PROV_CAP_Y + 2, COL_BLACK);
   drawCaption(tft, "PROVIDER", PROV_CAP_Y);
   tft.setTextColor(COL_CYAN, COL_BLACK);
-  centerText(tft, providerText(st), PROV_Y, 2);
+  centerText(tft, providerText(st), PROV_Y, 3);
 }
 
-static void drawGauge(Adafruit_ST7789& tft, const EspStatus& st) {
-  tft.fillRect(0, GAUGE_CAP_Y - 2, SCREEN_W, 48, COL_BLACK);
-  drawCaption(tft, "SUCCESS", GAUGE_CAP_Y);
+// --- speedometer gauge ------------------------------------------------------
+// Semicircle (180..360 deg): dim zone backdrop + bright value sweep,
+// tick marks, white needle, colored hub. No text.
+static void arcBand(Adafruit_ST7789& tft, float a0deg, float a1deg,
+                    int rOuter, int rInner, uint16_t color) {
+  if (a1deg <= a0deg) return;
+  for (float a = a0deg; a <= a1deg + 0.01f; a += 2.0f) {
+    float r = a * (float)M_PI / 180.0f;
+    float c = cosf(r), s = sinf(r);
+    tft.drawLine(GAUGE_CX + (int)(rInner * c), GAUGE_CY + (int)(rInner * s),
+                 GAUGE_CX + (int)(rOuter * c), GAUGE_CY + (int)(rOuter * s),
+                 color);
+  }
+}
+
+static void drawSpeedometer(Adafruit_ST7789& tft, const EspStatus& st) {
+  tft.fillRect(0, GAUGE_ZONE_TOP, SCREEN_W, GAUGE_ZONE_BOT - GAUGE_ZONE_TOP, COL_BLACK);
   int pct = successPct(st);
   uint16_t gc = gaugeColor(pct);
-  int fillW = st.total > 0 ? (int)((GAUGE_W * st.succ) / st.total) : 0;
-  // Track + fill + hairline border.
-  tft.fillRect(GAUGE_X, GAUGE_Y, GAUGE_W, GAUGE_H, COL_GAUGE_BG);
-  if (fillW > 0) tft.fillRect(GAUGE_X, GAUGE_Y, fillW, GAUGE_H, gc);
-  tft.drawRect(GAUGE_X - 1, GAUGE_Y - 1, GAUGE_W + 2, GAUGE_H + 2, COL_DGREY);
-  tft.setTextColor(COL_WHITE, COL_BLACK);
-  centerText(tft, gaugeText(st), GAUGE_TXT_Y, 2);
+  const int rO = GAUGE_R, rI = GAUGE_R - 12;
+  // Dim zone backdrop: red 0-60%, amber 60-90%, green 90-100%.
+  arcBand(tft, 180.0f, 288.0f, rO, rI, dimColor(COL_RED, 1, 4));
+  arcBand(tft, 288.0f, 342.0f, rO, rI, dimColor(COL_YELLOW, 1, 4));
+  arcBand(tft, 342.0f, 360.0f, rO, rI, dimColor(COL_GREEN, 1, 4));
+  // Bright value sweep.
+  arcBand(tft, 180.0f, 180.0f + 1.8f * (float)pct, rO, rI, gc);
+  // Tick marks every 10%.
+  for (int i = 0; i <= 10; i++) {
+    float a = (180.0f + (float)i * 18.0f) * (float)M_PI / 180.0f;
+    float c = cosf(a), s = sinf(a);
+    tft.drawLine(GAUGE_CX + (int)((rO + 2) * c), GAUGE_CY + (int)((rO + 2) * s),
+                 GAUGE_CX + (int)((rO + 8) * c), GAUGE_CY + (int)((rO + 8) * s),
+                 COL_LGREY);
+  }
+  // Needle + hub.
+  float na = (180.0f + 1.8f * (float)pct) * (float)M_PI / 180.0f;
+  tft.drawLine(GAUGE_CX, GAUGE_CY,
+               GAUGE_CX + (int)((rI - 4) * cosf(na)),
+               GAUGE_CY + (int)((rI - 4) * sinf(na)), COL_WHITE);
+  tft.fillCircle(GAUGE_CX, GAUGE_CY, 7, gc);
+  tft.fillCircle(GAUGE_CX, GAUGE_CY, 3, COL_WHITE);
 }
 
 static uint8_t personaSize(const String& disp) {
@@ -261,56 +245,37 @@ static uint8_t personaSize(const String& disp) {
 }
 
 static void drawPersona(Adafruit_ST7789& tft, const EspStatus& st) {
-  tft.fillRect(0, PERS_CAP_Y - 2, SCREEN_W, AGO_Y + 10 - PERS_CAP_Y, COL_BLACK);
-  drawCaption(tft, "PERSONA", PERS_CAP_Y);
+  // Persona glyph + large freshness; clears to the bottom (no footer).
+  tft.fillRect(0, PERS_Y - 10, SCREEN_W, SCREEN_H - (PERS_Y - 10), COL_BLACK);
   String disp = personaDisplay(st.persona);
   uint16_t pc = personaColor(st.persona);
   tft.setTextColor(pc, COL_BLACK);
   centerText(tft, disp, PERS_Y, personaSize(disp));
   tft.setTextColor(COL_LGREY, COL_BLACK);
-  centerText(tft, fmtAgo(st.ago_s), AGO_Y, 1);
+  centerText(tft, fmtAgo(st.ago_s), AGO_Y, 2);
 }
 
-static void drawFooter(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg) {
-  tft.fillRect(0, FOOT_Y, SCREEN_W, FOOT_H, COL_FOOTER_BG);
-  tft.setTextColor(COL_LGREY, COL_FOOTER_BG);
-  String f = st.offline
-      ? (errMsg.length() ? errMsg : "poll failed - retry")
-      : ("poll 15s - " + fmtAgo(st.ago_s));
-  if (f.length() > 28) f = f.substring(0, 28);
-  centerText(tft, f, FOOT_Y + 6, 1);
-}
-
-static void drawFull(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg,
-                     uint16_t c) {
+static void drawFull(Adafruit_ST7789& tft, const EspStatus& st, uint16_t c) {
   tft.fillScreen(COL_BLACK);
   tft.setTextWrap(false);
   drawTopBar(tft, st, c);
   drawDot(tft, c);
-  drawLabel(tft, statusLabel(st));
   drawProvider(tft, st);
-  drawGauge(tft, st);
+  drawSpeedometer(tft, st);
   drawPersona(tft, st);
-  drawFooter(tft, st, errMsg);
 }
 
-static Snap snapOf(const EspStatus& st, const String& errMsg) {
+static Snap snapOf(const EspStatus& st) {
   Snap cur;
   cur.title = titleText(st);
   cur.loopBadge = st.loop ? "ON" : "OFF";
-  cur.label = statusLabel(st);
   cur.provider = providerText(st);
-  cur.gauge = gaugeText(st);
-  cur.gaugeW = st.total > 0 ? (int)((GAUGE_W * st.succ) / st.total) : 0;
-  cur.gaugeC = gaugeColor(successPct(st));
+  cur.pct = successPct(st);
+  cur.gaugeC = gaugeColor(cur.pct);
   cur.persona = personaDisplay(st.persona);
   cur.personaC = personaColor(st.persona);
   cur.personaSize = personaSize(cur.persona);
   cur.ago = fmtAgo(st.ago_s);
-  cur.footer = st.offline
-      ? (errMsg.length() ? errMsg.substring(0, 28) : "poll failed - retry")
-      : ("poll 15s - " + cur.ago);
-  if (cur.footer.length() > 28) cur.footer = cur.footer.substring(0, 28);
   cur.color = statusColor(st.offline ? "grey" : st.status);
   cur.offline = st.offline;
   cur.valid = true;
@@ -318,71 +283,39 @@ static Snap snapOf(const EspStatus& st, const String& errMsg) {
 }
 
 void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg) {
+  (void)errMsg; // no footer to show it on; offline state still greys the UI
   uint16_t c = statusColor(st.offline ? "grey" : st.status);
   tft.setTextWrap(false);
-  Snap cur = snapOf(st, errMsg);
+  Snap cur = snapOf(st);
 
   if (!prev.valid) {
-    drawFull(tft, st, errMsg, c);
+    drawFull(tft, st, c);
     prev = cur;
     return;
   }
 
-  // Top bar (color, project or loop state changed) — dot glow shares the
+  // Top bar (color, project or loop state changed) — dot shares the
   // color, so repaint the dot too.
   if (cur.color != prev.color || cur.title != prev.title || cur.loopBadge != prev.loopBadge) {
     drawTopBar(tft, st, c);
     tft.fillRect(0, DOT_ZONE_TOP, SCREEN_W, DOT_ZONE_BOT - DOT_ZONE_TOP, COL_BLACK);
     drawDot(tft, c);
   }
-  if (cur.label != prev.label) drawLabel(tft, cur.label);
   if (cur.provider != prev.provider) drawProvider(tft, st);
-  if (cur.gauge != prev.gauge || cur.gaugeW != prev.gaugeW || cur.gaugeC != prev.gaugeC)
-    drawGauge(tft, st);
+  if (cur.pct != prev.pct || cur.gaugeC != prev.gaugeC)
+    drawSpeedometer(tft, st);
   if (cur.persona != prev.persona || cur.personaC != prev.personaC ||
       cur.personaSize != prev.personaSize || cur.ago != prev.ago)
     drawPersona(tft, st);
-  if (cur.footer != prev.footer) drawFooter(tft, st, errMsg);
 
   prev = cur;
 }
 
-// --- animation tick (no fillScreen — tiny shapes only) ----------------------
+// --- static layout: no per-frame animation ----------------------------------
 void uiTick(Adafruit_ST7789& tft, const EspStatus& st,
             unsigned long nowMs, unsigned long lastPollMs) {
-  uint16_t c = statusColor(st.offline ? "grey" : st.status);
-
-  // Breathing pulse: 2.4 s period, core brightness 70-100% + orbiting halos.
-  float t = (float)(nowMs % 2400) / 2400.0f * 2.0f * (float)M_PI;
-  float k = 0.5f + 0.5f * sinf(t); // 0..1
-  uint8_t num = (uint8_t)(7.0f + 3.0f * k); // 7..10
-  uint16_t core = dimColor(c, num, 10);
-
-  // Repaint the dot zone (small band — no visible flicker).
-  tft.fillRect(0, DOT_ZONE_TOP, SCREEN_W, DOT_ZONE_BOT - DOT_ZONE_TOP, COL_BLACK);
-  // Outer static glow + breathing mid halo + pulsing core + gloss.
-  tft.fillCircle(DOT_CX, DOT_CY, DOT_R + 8, dimColor(c, 1, 6));
-  int mid = DOT_R + 3 + (int)(3.0f * k);
-  tft.fillCircle(DOT_CX, DOT_CY, mid, dimColor(c, 1, 3));
-  tft.fillCircle(DOT_CX, DOT_CY, DOT_R, core);
-  tft.fillCircle(DOT_CX - 9, DOT_CY - 10, 6, dimColor(COL_WHITE, 3, 4));
-  tft.fillCircle(DOT_CX - 9, DOT_CY - 10, 3, COL_WHITE);
-  // Pulse ring orbiting just outside the dot.
-  int r = DOT_R + 6 + (int)(3.0f * k);
-  tft.drawCircle(DOT_CX, DOT_CY, r, dimColor(c, 1, 2));
-
-  // Poll countdown bar (grows 0 -> full width over POLL_MS).
-  unsigned long elapsed = nowMs - lastPollMs;
-  if (elapsed > POLL_MS) elapsed = POLL_MS;
-  int w = (int)((elapsed * (unsigned long)SCREEN_W) / POLL_MS);
-  if (w != prevBarW) {
-    if (w < prevBarW || prevBarW < 0) {
-      // New cycle (or first run): repaint track then fill.
-      tft.fillRect(0, BAR_Y, SCREEN_W, BAR_H, COL_BAR_BG);
-      if (w > 0) tft.fillRect(0, BAR_Y, w, BAR_H, c);
-    } else {
-      tft.fillRect(prevBarW, BAR_Y, w - prevBarW, BAR_H, c);
-    }
-    prevBarW = w;
-  }
+  (void)tft;
+  (void)st;
+  (void)nowMs;
+  (void)lastPollMs;
 }
