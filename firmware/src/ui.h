@@ -3,8 +3,9 @@
 #include <Adafruit_ST7789.h>
 
 // v5 layout contract (see server/ENDPOINT.md):
-//   Project (Loop) / Provider (large) / speedometer gauge (succ/total,
-//   animated needle, no text) / Persona glyph + freshness (large, no footer)
+//   Project (Loop) / Provider (large) + model (small) / speedometer gauge
+//   (succ/total, animated needle, no text) / Persona glyph + freshness
+//   (large, no footer)
 //   Loop status lives in the header badge + bar color; no status dot.
 struct EspStatus {
   bool ok = false;
@@ -12,6 +13,7 @@ struct EspStatus {
   bool loop = false;
   String status = "red";   // green|red (server-side); grey only while offline
   String provider = "-";   // effective LLM provider (e.g. joingonka)
+  String model = "-";      // effective LLM model, basename (e.g. MiniMax-M2.7)
   long succ = 0;           // successful calls in strict last-10 window (gauge numerator)
   long total = 0;          // observed calls in window, max 10 (gauge denominator)
   String persona = "-";    // pm | engineer | qa | review-engineer | ...

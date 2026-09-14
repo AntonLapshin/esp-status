@@ -21,11 +21,12 @@
 
 // Layout v5 (170x320 portrait, works for rotation 0 and 2)
 //   header  -> project + LOOP badge (loop status lives here, no dot)
-//   provider (large) / speedometer gauge (no text) / persona glyph + ago
-//   (no SUCCESS/PERSONA captions, no footer, no poll bar)
+//   provider (large) + model (small) / speedometer gauge (no text) /
+//   persona glyph + ago (no SUCCESS/PERSONA captions, no footer, no poll bar)
 #define TOP_H 30
 #define PROV_CAP_Y 44
 #define PROV_Y 56
+#define MODEL_Y 90
 #define GAUGE_CX (SCREEN_W / 2)
 #define GAUGE_CY 184
 #define GAUGE_R 54
@@ -99,6 +100,16 @@ static String providerText(const EspStatus& st) {
   return p;
 }
 
+static String modelText(const EspStatus& st) {
+  String m = st.model.length() ? st.model : "-";
+  // The provider is shown large above, so show the model basename
+  // ("org/MiniMax-M2.7" -> "MiniMax-M2.7"). Size-1 font fits 28 chars.
+  int slash = m.lastIndexOf('/');
+  if (slash >= 0) m = m.substring(slash + 1);
+  if (m.length() > 28) m = m.substring(0, 28);
+  return m;
+}
+
 static int successPct(const EspStatus& st) {
   if (st.total <= 0) return 0;
   return (int)((st.succ * 100L) / st.total);
@@ -135,6 +146,7 @@ struct Snap {
   String title;
   String loopBadge;
   String provider;
+  String model;
   int pct = -1;
   uint16_t gaugeC = 0;
   String persona;
@@ -178,6 +190,14 @@ static void drawProvider(Adafruit_ST7789& tft, const EspStatus& st) {
   drawCaption(tft, "PROVIDER", PROV_CAP_Y);
   tft.setTextColor(COL_CYAN, COL_BLACK);
   centerText(tft, providerText(st), PROV_Y, 3);
+}
+
+static void drawModel(Adafruit_ST7789& tft, const EspStatus& st) {
+  // Small model line under the large provider (no caption — decluttered v5
+  // style). Band sits between the provider block and the gauge zone.
+  tft.fillRect(0, MODEL_Y - 4, SCREEN_W, GAUGE_ZONE_TOP - MODEL_Y, COL_BLACK);
+  tft.setTextColor(COL_WHITE, COL_BLACK);
+  centerText(tft, modelText(st), MODEL_Y, 1);
 }
 
 // --- speedometer gauge ------------------------------------------------------
@@ -294,6 +314,7 @@ static void drawFull(Adafruit_ST7789& tft, const EspStatus& st, uint16_t c) {
   tft.setTextWrap(false);
   drawTopBar(tft, st, c);
   drawProvider(tft, st);
+  drawModel(tft, st);
   shownPct = (float)successPct(st);
   animating = false;
   drawSpeedometerAt(tft, shownPct);
@@ -305,6 +326,7 @@ static Snap snapOf(const EspStatus& st) {
   cur.title = titleText(st);
   cur.loopBadge = st.loop ? "ON" : "OFF";
   cur.provider = providerText(st);
+  cur.model = modelText(st);
   cur.pct = successPct(st);
   cur.gaugeC = gaugeColor(cur.pct);
   cur.persona = personaDisplay(st.persona);
@@ -334,6 +356,7 @@ void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg) {
     drawTopBar(tft, st, c);
   }
   if (cur.provider != prev.provider) drawProvider(tft, st);
+  if (cur.model != prev.model) drawModel(tft, st);
   if (cur.pct != prev.pct || cur.gaugeC != prev.gaugeC)
     startNeedleAnim((float)cur.pct); // uiTick eases the arrow there
   if (cur.persona != prev.persona || cur.personaC != prev.personaC ||

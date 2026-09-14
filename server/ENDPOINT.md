@@ -2,7 +2,7 @@
 
 Live implementation: `auto-pi/ui/server/server.js` → `buildEspStatus()`.
 
-Tiny aggregated JSON for ESP32 polling over LAN (~260 bytes, `Cache-Control: no-store`).
+Tiny aggregated JSON for ESP32 polling over LAN (~310 bytes, `Cache-Control: no-store`).
 Full dashboards should use `/api/status` instead.
 
 ## Request
@@ -20,6 +20,7 @@ GET http://<DEV-LAN-IP>:8787/api/esp-status
   "loop": true,
   "status": "green",
   "provider": "joingonka",
+  "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
   "succ": 74,
   "total": 99,
   "persona": "engineer",
@@ -34,6 +35,7 @@ GET http://<DEV-LAN-IP>:8787/api/esp-status
 | `loop` | header: `ON` / `OFF` badge | `.pi/state/loop.lock` liveness |
 | `status` | pulsating dot: `green` / `red` | green = loop on + last run healthy + (a persona actively running OR fresh activity ≤ 15 min); else red |
 | `provider` | `PROVIDER` line | effective pi provider (config → `PI_*` env → pi settings → pi `auth.json` → env hint) |
+| `model` | small model line under the provider (basename after `/`, max 28 chars) | effective pi model (config → `PI_*` env → pi settings → `health.jsonl` fallback) |
 | `succ`, `total` | `SUCCESS` gauge (strict last 10 calls, e.g. `9/10 90%`) | successful / total LLM calls from `health.jsonl` (cumulative on the wire; firmware shows only the last 10 actually observed deltas, never backfilled from totals) |
 | `persona` | `PERSONA` hero glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`, …) | active persona (started run wins, else last run) |
 | `ago_s` | freshness (`47s ago`, footer) | seconds since last run/event (`-1` = never) |

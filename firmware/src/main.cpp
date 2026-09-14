@@ -88,6 +88,7 @@ bool fetchStatus(EspStatus& out, String& errMsg) {
   String s = String((const char*)(doc["status"] | "red"));
   out.status = (s == "green") ? "green" : "red";
   out.provider = String((const char*)(doc["provider"] | "-"));
+  out.model = String((const char*)(doc["model"] | "-"));
   long rawSucc = doc["succ"] | 0;
   long rawTotal = doc["total"] | 0;
   // Fold cumulative counters into the strict last-10 window; gauge reads
@@ -148,8 +149,9 @@ static void doPoll() {
   if (fetchStatus(next, err)) {
     current = next;
     uiDraw(tft, current, "");
-    Serial.printf("ok %s %s %s %ld/%ld %s %lds\n", current.status.c_str(),
+    Serial.printf("ok %s %s %s %s %ld/%ld %s %lds\n", current.status.c_str(),
                   current.proj.c_str(), current.provider.c_str(),
+                  current.model.c_str(),
                   current.succ, current.total,
                   current.persona.c_str(), current.ago_s);
   } else {
