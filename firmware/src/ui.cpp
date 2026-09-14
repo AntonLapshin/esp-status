@@ -184,15 +184,36 @@ static void drawProvider(Adafruit_ST7789& tft, const EspStatus& st) {
 // Semicircle (180..360 deg): zone backdrop + value sweep,
 // 11 white major ticks only (no minor marks), white needle, colored hub.
 // pctF is animated (see uiDraw/uiTick); backdrop zones stay static.
+//
+// arcBand draws a SOLID annular sector: the band is tiled with small quads
+// (two fillTriangle each) instead of radial 1px lines from the center.
+// Radial lines leave 1px black pinholes at the outer edge because a 1 deg
+// step spans ~0.94px at R=54 and integer rounding opens gaps. Quad tiling
+// shares exact edge vertices between neighbours, so no gaps are possible.
 static void arcBand(Adafruit_ST7789& tft, float a0deg, float a1deg,
                     int rOuter, int rInner, uint16_t color) {
-  if (a1deg <= a0deg) return;
-  for (float a = a0deg; a <= a1deg + 0.01f; a += 1.0f) {
-    float r = a * (float)M_PI / 180.0f;
-    float c = cosf(r), s = sinf(r);
-    tft.drawLine(GAUGE_CX + (int)(rInner * c), GAUGE_CY + (int)(rInner * s),
-                 GAUGE_CX + (int)(rOuter * c), GAUGE_CY + (int)(rOuter * s),
-                 color);
+  float span = a1deg - a0deg;
+  if (span <= 0.0f) return;
+  // ~2 deg per quad: smooth at R=54 (chord error < 0.1px), few triangles.
+  int n = (int)ceilf(span / 2.0f);
+  if (n < 1) n = 1;
+  for (int i = 0; i < n; i++) {
+    float a = a0deg + span * (float)i / (float)n;
+    float b = a0deg + span * (float)(i + 1) / (float)n;
+    float ra = a * (float)M_PI / 180.0f;
+    float rb = b * (float)M_PI / 180.0f;
+    float ca = cosf(ra), sa = sinf(ra);
+    float cb = cosf(rb), sb = sinf(rb);
+    int x0i = GAUGE_CX + (int)(rInner * ca);
+    int y0i = GAUGE_CY + (int)(rInner * sa);
+    int x0o = GAUGE_CX + (int)(rOuter * ca);
+    int y0o = GAUGE_CY + (int)(rOuter * sa);
+    int x1i = GAUGE_CX + (int)(rInner * cb);
+    int y1i = GAUGE_CY + (int)(rInner * sb);
+    int x1o = GAUGE_CX + (int)(rOuter * cb);
+    int y1o = GAUGE_CY + (int)(rOuter * sb);
+    tft.fillTriangle(x0i, y0i, x0o, y0o, x1i, y1i, color);
+    tft.fillTriangle(x0o, y0o, x1o, y1o, x1i, y1i, color);
   }
 }
 

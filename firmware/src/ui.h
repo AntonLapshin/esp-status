@@ -12,8 +12,8 @@ struct EspStatus {
   bool loop = false;
   String status = "red";   // green|red (server-side); grey only while offline
   String provider = "-";   // effective LLM provider (e.g. joingonka)
-  long succ = 0;           // successful calls in last-10 window (gauge numerator)
-  long total = 0;          // calls in window, max 10 (gauge denominator)
+  long succ = 0;           // successful calls in strict last-10 window (gauge numerator)
+  long total = 0;          // observed calls in window, max 10 (gauge denominator)
   String persona = "-";    // pm | engineer | qa | review-engineer | ...
   long ago_s = -1;
   // Legacy fields (pre-v3 payloads): still parsed, no longer displayed.

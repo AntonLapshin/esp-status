@@ -24,9 +24,12 @@ unsigned long lastPoll = 0;
 unsigned long lastTick = 0;
 
 // --- Rolling last-10 provider-call window -----------------------------------
-// The server sends cumulative succ/total counters, but the gauge only shows
-// the success rate of the last 10 provider calls. Individual outcomes are
-// inferred from counter deltas between polls and kept in a ring buffer.
+// The gauge shows strictly the last 10 provider calls actually observed by
+// this device. The server sends cumulative succ/total counters; individual
+// outcomes are inferred from counter deltas between polls and kept in a ring
+// buffer. Nothing is ever backfilled from cumulative totals — on boot,
+// counter reset, or provider switch the window starts empty and fills up as
+// new calls are observed.
 namespace {
 constexpr int kWinN = 10;
 bool winHist[kWinN];
@@ -41,27 +44,12 @@ void winPush(bool ok) {
   if (winCount < kWinN) winCount++;
 }
 
-// Seed the window proportionally from cumulative counters (boot, counter
-// reset, or provider switch) so the gauge shows something sensible before
-// 10 new calls are observed.
-void winSeed(long rawSucc, long rawTotal) {
+// Strict last-10: drop everything, wait for fresh deltas. No proportional
+// seeding from cumulative counters — that would mix lifetime history into
+// a gauge that must reflect only the most recent calls.
+void winClear() {
   winCount = 0;
   winIdx = 0;
-  if (rawTotal <= 0) return;
-  if (rawTotal >= kWinN) {
-    int nSucc = (int)((rawSucc * (long)kWinN) / rawTotal);  // 0..10
-    if (nSucc < 0) nSucc = 0;
-    if (nSucc > kWinN) nSucc = kWinN;
-    for (int i = 0; i < nSucc; i++) winPush(true);
-    for (int i = nSucc; i < kWinN; i++) winPush(false);
-  } else {
-    int n = (int)rawTotal;
-    long s = rawSucc;
-    if (s < 0) s = 0;
-    if (s > n) s = n;
-    for (long i = 0; i < s; i++) winPush(true);
-    for (long i = s; i < n; i++) winPush(false);
-  }
 }
 }  // namespace
 
@@ -102,12 +90,13 @@ bool fetchStatus(EspStatus& out, String& errMsg) {
   out.provider = String((const char*)(doc["provider"] | "-"));
   long rawSucc = doc["succ"] | 0;
   long rawTotal = doc["total"] | 0;
-  // Fold cumulative counters into the last-10 window; gauge reads out.succ/total.
+  // Fold cumulative counters into the strict last-10 window; gauge reads
+  // out.succ/total. Resets clear the window — no backfill from totals.
   bool reset = (prevRawTotal < 0) || (out.provider != prevRawProv) ||
                (rawTotal < prevRawTotal) || (rawSucc < 0) || (rawSucc > rawTotal) ||
                (rawSucc < prevRawSucc);
   if (reset) {
-    winSeed(rawSucc, rawTotal);
+    winClear();
   } else {
     long dSucc = rawSucc - prevRawSucc;
     long dTotal = rawTotal - prevRawTotal;
