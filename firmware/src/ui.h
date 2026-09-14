@@ -2,9 +2,10 @@
 #include <Arduino.h>
 #include <Adafruit_ST7789.h>
 
-// v4 layout contract (see server/ENDPOINT.md):
-//   Project (Loop) / tiny static status dot / Provider (large) / speedometer
-//   gauge (succ/total, no text) / Persona glyph + freshness (large, no footer)
+// v5 layout contract (see server/ENDPOINT.md):
+//   Project (Loop) / Provider (large) / speedometer gauge (succ/total,
+//   animated needle, no text) / Persona glyph + freshness (large, no footer)
+//   Loop status lives in the header badge + bar color; no status dot.
 struct EspStatus {
   bool ok = false;
   String proj = "";
@@ -35,7 +36,8 @@ void uiBoot(Adafruit_ST7789& tft, const String& ssid);
 // Small boot-line update (no full wipe) — used while connecting to WiFi.
 void uiBootStatus(Adafruit_ST7789& tft, const String& msg);
 // Differential redraw: full frame once, then only dirty rects (no flicker).
+// The gauge needle animates towards new values in uiTick (ease-out sweep).
 void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg);
-// Static layout — no animation frame needed. Kept as a no-op for API compat.
+// Needle animation frame (call every ~40ms). Kept as a no-op when idle.
 void uiTick(Adafruit_ST7789& tft, const EspStatus& st,
             unsigned long nowMs, unsigned long lastPollMs);

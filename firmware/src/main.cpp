@@ -175,7 +175,8 @@ void setup() {
   Serial.begin(115200);
   delay(200);
   pinMode(LCD_BL_PIN, OUTPUT);
-  digitalWrite(LCD_BL_PIN, HIGH);
+  // 50% brightness (was full HIGH): PWM duty 128/255 to dim the panel.
+  analogWrite(LCD_BL_PIN, 128);
 
   SPI.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);
   tft.init(SCREEN_W, SCREEN_H);

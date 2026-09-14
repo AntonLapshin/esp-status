@@ -19,26 +19,20 @@
 #define COL_DGREY 0x7BEF
 #define COL_GAUGE_BG 0x18E3
 
-// Layout v4 (170x320 portrait, works for rotation 0 and 2)
-//   header  -> project + LOOP badge
-//   tiny static status dot (no pulse, no GREEN/RED label)
+// Layout v5 (170x320 portrait, works for rotation 0 and 2)
+//   header  -> project + LOOP badge (loop status lives here, no dot)
 //   provider (large) / speedometer gauge (no text) / persona glyph + ago
 //   (no SUCCESS/PERSONA captions, no footer, no poll bar)
 #define TOP_H 30
-#define DOT_CX (SCREEN_W / 2)
-#define DOT_CY 50
-#define DOT_R 6
-#define DOT_ZONE_TOP 40
-#define DOT_ZONE_BOT 62
-#define PROV_CAP_Y 70
-#define PROV_Y 82
+#define PROV_CAP_Y 44
+#define PROV_Y 56
 #define GAUGE_CX (SCREEN_W / 2)
-#define GAUGE_CY 190
+#define GAUGE_CY 184
 #define GAUGE_R 54
-#define GAUGE_ZONE_TOP 118
-#define GAUGE_ZONE_BOT 208
-#define PERS_Y 218
-#define AGO_Y 264
+#define GAUGE_ZONE_TOP 112
+#define GAUGE_ZONE_BOT 202
+#define PERS_Y 212
+#define AGO_Y 258
 
 uint16_t statusColor(const String& s) {
   if (s == "green") return COL_GREEN;
@@ -116,23 +110,14 @@ static uint16_t gaugeColor(int pct) {
   return COL_RED;
 }
 
-// --- tiny static status dot -------------------------------------------------
-static void drawDot(Adafruit_ST7789& tft, uint16_t c) {
-  tft.fillCircle(DOT_CX, DOT_CY, DOT_R + 2, dimColor(c, 1, 4));
-  tft.fillCircle(DOT_CX, DOT_CY, DOT_R, c);
-}
-
 // --- boot -------------------------------------------------------------------
 void uiBoot(Adafruit_ST7789& tft, const String& ssid) {
   tft.fillScreen(COL_BLACK);
-  uint16_t c = COL_CYAN;
-  tft.fillCircle(DOT_CX, DOT_CY, DOT_R + 8, dimColor(c, 1, 6));
-  tft.fillCircle(DOT_CX, DOT_CY, DOT_R, c);
   tft.setTextColor(COL_WHITE, COL_BLACK);
   tft.setTextWrap(false);
   centerText(tft, "esp-status", 122, 3);
   tft.setTextColor(COL_DGREY, COL_BLACK);
-  String sub = "v4 connecting " + ssid;
+  String sub = "v5 connecting " + ssid;
   if (sub.length() > 28) sub = sub.substring(0, 28);
   centerText(tft, sub, 162, 1);
 }
@@ -196,12 +181,13 @@ static void drawProvider(Adafruit_ST7789& tft, const EspStatus& st) {
 }
 
 // --- speedometer gauge ------------------------------------------------------
-// Semicircle (180..360 deg): dim zone backdrop + bright value sweep,
-// tick marks, white needle, colored hub. No text.
+// Semicircle (180..360 deg): zone backdrop + value sweep,
+// 11 white major ticks only (no minor marks), white needle, colored hub.
+// pctF is animated (see uiDraw/uiTick); backdrop zones stay static.
 static void arcBand(Adafruit_ST7789& tft, float a0deg, float a1deg,
                     int rOuter, int rInner, uint16_t color) {
   if (a1deg <= a0deg) return;
-  for (float a = a0deg; a <= a1deg + 0.01f; a += 2.0f) {
+  for (float a = a0deg; a <= a1deg + 0.01f; a += 1.0f) {
     float r = a * (float)M_PI / 180.0f;
     float c = cosf(r), s = sinf(r);
     tft.drawLine(GAUGE_CX + (int)(rInner * c), GAUGE_CY + (int)(rInner * s),
@@ -210,32 +196,59 @@ static void arcBand(Adafruit_ST7789& tft, float a0deg, float a1deg,
   }
 }
 
-static void drawSpeedometer(Adafruit_ST7789& tft, const EspStatus& st) {
+static void drawSpeedometerAt(Adafruit_ST7789& tft, float pctF) {
   tft.fillRect(0, GAUGE_ZONE_TOP, SCREEN_W, GAUGE_ZONE_BOT - GAUGE_ZONE_TOP, COL_BLACK);
-  int pct = successPct(st);
+  if (pctF < 0) pctF = 0;
+  if (pctF > 100) pctF = 100;
+  int pct = (int)(pctF + 0.5f);
   uint16_t gc = gaugeColor(pct);
   const int rO = GAUGE_R, rI = GAUGE_R - 12;
-  // Dim zone backdrop: red 0-60%, amber 60-90%, green 90-100%.
+  // Zone backdrop: red 0-60% dim, yellow 60-90% + green 90-100% bright.
   arcBand(tft, 180.0f, 288.0f, rO, rI, dimColor(COL_RED, 1, 4));
-  arcBand(tft, 288.0f, 342.0f, rO, rI, dimColor(COL_YELLOW, 1, 4));
-  arcBand(tft, 342.0f, 360.0f, rO, rI, dimColor(COL_GREEN, 1, 4));
-  // Bright value sweep.
-  arcBand(tft, 180.0f, 180.0f + 1.8f * (float)pct, rO, rI, gc);
-  // Tick marks every 10%.
+  arcBand(tft, 288.0f, 342.0f, rO, rI, dimColor(COL_YELLOW, 1, 2));
+  arcBand(tft, 342.0f, 360.0f, rO, rI, dimColor(COL_GREEN, 1, 2));
+  // Bright value sweep (follows the animated needle).
+  arcBand(tft, 180.0f, 180.0f + 1.8f * pctF, rO, rI, gc);
+  // 11 major ticks only, white.
   for (int i = 0; i <= 10; i++) {
     float a = (180.0f + (float)i * 18.0f) * (float)M_PI / 180.0f;
     float c = cosf(a), s = sinf(a);
     tft.drawLine(GAUGE_CX + (int)((rO + 2) * c), GAUGE_CY + (int)((rO + 2) * s),
                  GAUGE_CX + (int)((rO + 8) * c), GAUGE_CY + (int)((rO + 8) * s),
-                 COL_LGREY);
+                 COL_WHITE);
   }
   // Needle + hub.
-  float na = (180.0f + 1.8f * (float)pct) * (float)M_PI / 180.0f;
+  float na = (180.0f + 1.8f * pctF) * (float)M_PI / 180.0f;
   tft.drawLine(GAUGE_CX, GAUGE_CY,
                GAUGE_CX + (int)((rI - 4) * cosf(na)),
                GAUGE_CY + (int)((rI - 4) * sinf(na)), COL_WHITE);
   tft.fillCircle(GAUGE_CX, GAUGE_CY, 7, gc);
   tft.fillCircle(GAUGE_CX, GAUGE_CY, 3, COL_WHITE);
+}
+
+static void drawSpeedometer(Adafruit_ST7789& tft, const EspStatus& st) {
+  drawSpeedometerAt(tft, (float)successPct(st));
+}
+
+// Needle animation state: uiDraw sets the target, uiTick eases shownPct
+// towards it so the arrow sweeps instead of jumping on every poll.
+static float shownPct = -1.0f; // currently displayed value (<0 = uninit)
+static float animFrom = 0.0f;
+static float animTo = 0.0f;
+static unsigned long animT0 = 0;
+static bool animating = false;
+static const unsigned long ANIM_MS = 700;
+
+static void startNeedleAnim(float target) {
+  if (shownPct < 0) {
+    shownPct = target;
+    animating = false;
+    return;
+  }
+  animFrom = shownPct;
+  animTo = target;
+  animT0 = millis();
+  animating = (animFrom != animTo);
 }
 
 static uint8_t personaSize(const String& disp) {
@@ -259,9 +272,10 @@ static void drawFull(Adafruit_ST7789& tft, const EspStatus& st, uint16_t c) {
   tft.fillScreen(COL_BLACK);
   tft.setTextWrap(false);
   drawTopBar(tft, st, c);
-  drawDot(tft, c);
   drawProvider(tft, st);
-  drawSpeedometer(tft, st);
+  shownPct = (float)successPct(st);
+  animating = false;
+  drawSpeedometerAt(tft, shownPct);
   drawPersona(tft, st);
 }
 
@@ -294,16 +308,13 @@ void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg) {
     return;
   }
 
-  // Top bar (color, project or loop state changed) — dot shares the
-  // color, so repaint the dot too.
+  // Top bar carries the loop status (ON/OFF + bar color) — no dot.
   if (cur.color != prev.color || cur.title != prev.title || cur.loopBadge != prev.loopBadge) {
     drawTopBar(tft, st, c);
-    tft.fillRect(0, DOT_ZONE_TOP, SCREEN_W, DOT_ZONE_BOT - DOT_ZONE_TOP, COL_BLACK);
-    drawDot(tft, c);
   }
   if (cur.provider != prev.provider) drawProvider(tft, st);
   if (cur.pct != prev.pct || cur.gaugeC != prev.gaugeC)
-    drawSpeedometer(tft, st);
+    startNeedleAnim((float)cur.pct); // uiTick eases the arrow there
   if (cur.persona != prev.persona || cur.personaC != prev.personaC ||
       cur.personaSize != prev.personaSize || cur.ago != prev.ago)
     drawPersona(tft, st);
@@ -311,11 +322,22 @@ void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg) {
   prev = cur;
 }
 
-// --- static layout: no per-frame animation ----------------------------------
+// --- needle animation: eased sweep after every poll --------------------------
 void uiTick(Adafruit_ST7789& tft, const EspStatus& st,
             unsigned long nowMs, unsigned long lastPollMs) {
-  (void)tft;
   (void)st;
-  (void)nowMs;
   (void)lastPollMs;
+  if (!animating || shownPct < 0) return;
+  unsigned long dt = (nowMs >= animT0) ? (nowMs - animT0) : 0;
+  float t = (float)dt / (float)ANIM_MS;
+  if (t >= 1.0f) {
+    shownPct = animTo;
+    animating = false;
+    drawSpeedometerAt(tft, shownPct);
+    return;
+  }
+  // Ease-out cubic: fast start, soft landing.
+  float e = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
+  shownPct = animFrom + (animTo - animFrom) * e;
+  drawSpeedometerAt(tft, shownPct);
 }
