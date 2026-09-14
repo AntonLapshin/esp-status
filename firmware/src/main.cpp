@@ -23,6 +23,48 @@ String lastErr = "boot";
 unsigned long lastPoll = 0;
 unsigned long lastTick = 0;
 
+// --- Rolling last-10 provider-call window -----------------------------------
+// The server sends cumulative succ/total counters, but the gauge only shows
+// the success rate of the last 10 provider calls. Individual outcomes are
+// inferred from counter deltas between polls and kept in a ring buffer.
+namespace {
+constexpr int kWinN = 10;
+bool winHist[kWinN];
+int winCount = 0;  // valid entries (0..10)
+int winIdx = 0;    // next write position
+long prevRawSucc = -1, prevRawTotal = -1;
+String prevRawProv = "";
+
+void winPush(bool ok) {
+  winHist[winIdx] = ok;
+  winIdx = (winIdx + 1) % kWinN;
+  if (winCount < kWinN) winCount++;
+}
+
+// Seed the window proportionally from cumulative counters (boot, counter
+// reset, or provider switch) so the gauge shows something sensible before
+// 10 new calls are observed.
+void winSeed(long rawSucc, long rawTotal) {
+  winCount = 0;
+  winIdx = 0;
+  if (rawTotal <= 0) return;
+  if (rawTotal >= kWinN) {
+    int nSucc = (int)((rawSucc * (long)kWinN) / rawTotal);  // 0..10
+    if (nSucc < 0) nSucc = 0;
+    if (nSucc > kWinN) nSucc = kWinN;
+    for (int i = 0; i < nSucc; i++) winPush(true);
+    for (int i = nSucc; i < kWinN; i++) winPush(false);
+  } else {
+    int n = (int)rawTotal;
+    long s = rawSucc;
+    if (s < 0) s = 0;
+    if (s > n) s = n;
+    for (long i = 0; i < s; i++) winPush(true);
+    for (long i = s; i < n; i++) winPush(false);
+  }
+}
+}  // namespace
+
 void connectWifi() {
   if (WiFi.status() == WL_CONNECTED) return;
   WiFi.mode(WIFI_STA);
@@ -58,8 +100,37 @@ bool fetchStatus(EspStatus& out, String& errMsg) {
   String s = String((const char*)(doc["status"] | "red"));
   out.status = (s == "green") ? "green" : "red";
   out.provider = String((const char*)(doc["provider"] | "-"));
-  out.succ = doc["succ"] | 0;
-  out.total = doc["total"] | 0;
+  long rawSucc = doc["succ"] | 0;
+  long rawTotal = doc["total"] | 0;
+  // Fold cumulative counters into the last-10 window; gauge reads out.succ/total.
+  bool reset = (prevRawTotal < 0) || (out.provider != prevRawProv) ||
+               (rawTotal < prevRawTotal) || (rawSucc < 0) || (rawSucc > rawTotal) ||
+               (rawSucc < prevRawSucc);
+  if (reset) {
+    winSeed(rawSucc, rawTotal);
+  } else {
+    long dSucc = rawSucc - prevRawSucc;
+    long dTotal = rawTotal - prevRawTotal;
+    if (dTotal > 0) {
+      if (dSucc < 0) dSucc = 0;
+      if (dSucc > dTotal) dSucc = dTotal;
+      long nSucc = dSucc, nFail = dTotal - dSucc;
+      // Keep only the most recent 10 of the batch (fails treated as newest).
+      if (nSucc + nFail > kWinN) {
+        if (nFail >= kWinN) { nSucc = 0; nFail = kWinN; }
+        else { nSucc = kWinN - nFail; }
+      }
+      for (long i = 0; i < nSucc; i++) winPush(true);
+      for (long i = 0; i < nFail; i++) winPush(false);
+    }
+  }
+  prevRawSucc = rawSucc;
+  prevRawTotal = rawTotal;
+  prevRawProv = out.provider;
+  long wSucc = 0;
+  for (int i = 0; i < winCount; i++) if (winHist[i]) wSucc++;
+  out.succ = wSucc;
+  out.total = winCount;
   out.persona = String((const char*)(doc["persona"] | "-"));
   out.ago_s = doc["ago_s"] | -1;
   // Legacy pre-v3 fields (still parsed for compat / serial log).
