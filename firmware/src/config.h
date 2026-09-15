@@ -6,7 +6,7 @@
 
 // --- auto-pi backend (same LAN) ---
 // Find server IP with `hostname -I` on the machine running `npm run ui:server`
-#define SERVER_URL "http://192.168.7.128:8787/api/esp-status"
+#define SERVER_URL "http://192.168.7.131:8787/api/esp-status"
 
 // --- Polling ---
 #define POLL_MS 15000
