@@ -77,9 +77,9 @@ bool fetchStatus(EspStatus& out, String& errMsg) {
   out.total = rawTotal;
   out.persona = String((const char*)(doc["persona"] | "-"));
   out.ago_s = doc["ago_s"] | -1;
-  // Legacy pre-v3 fields (still parsed for compat / serial log).
+  // Legacy pre-v6 fields (still parsed for compat / serial log, except
+  // `runs` which v6 no longer sends).
   out.last = String((const char*)(doc["last"] | "-"));
-  out.runs = doc["runs"] | 0;
   out.ok_n = doc["ok_n"] | 0;
   out.fail_n = doc["fail_n"] | 0;
   out.tok_today = doc["tok_today"] | 0;
