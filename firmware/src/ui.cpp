@@ -111,8 +111,9 @@ static String modelText(const EspStatus& st) {
 }
 
 static int successPct(const EspStatus& st) {
-  if (st.total <= 0) return 0;
-  return (int)((st.succ * 100L) / st.total);
+  int total = st.ok_n + st.fail_n;
+  if (total <= 0) return 0;
+  return (int)((st.ok_n * 100L) / total);
 }
 
 static uint16_t gaugeColor(int pct) {

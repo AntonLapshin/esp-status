@@ -2,11 +2,12 @@
 #include <Arduino.h>
 #include <Adafruit_ST7789.h>
 
-// v5 layout contract (see server/ENDPOINT.md):
+// v7 layout contract (see server/ENDPOINT.md):
 //   Project (Loop) / Provider (large) + model (small) / speedometer gauge
-//   (succ/total, animated needle, no text) / Persona glyph + freshness
+//   (ok_n/fail_n, animated needle, no text) / Persona glyph + freshness
 //   (large, no footer)
 //   Loop status lives in the header badge + bar color; no status dot.
+//   Gauge = ok_n / (ok_n + fail_n) over the last <=10 LLM calls (server-windowed).
 struct EspStatus {
   bool ok = false;
   String proj = "";
@@ -14,15 +15,13 @@ struct EspStatus {
   String status = "red";   // green|red (server-side); grey only while offline
   String provider = "-";   // effective LLM provider (e.g. joingonka)
   String model = "-";      // effective LLM model, basename (e.g. MiniMax-M2.7)
-  long succ = 0;           // successful calls in server-side last-10 window (gauge numerator)
-  long total = 0;          // calls in window, max 10 (gauge denominator)
+  int ok_n = 0;            // successful LLM calls in server-side last-10 window (gauge numerator)
+  int fail_n = 0;          // failed LLM calls in window (gauge denominator = ok_n + fail_n, max 10)
   String persona = "-";    // pm | engineer | qa | review-engineer | ...
   long ago_s = -1;
-  // Legacy fields (pre-v6 payloads): still parsed, no longer displayed.
-  // (`runs` was removed in v6 and is no longer parsed.)
+  // Legacy fields (pre-v7 payloads): still parsed, no longer displayed.
+  // (`succ`/`total` were removed in v7 in favour of ok_n/fail_n.)
   String last = "";
-  int ok_n = 0;
-  int fail_n = 0;
   long tok_today = 0;
   int err = 0;
   bool offline = true;

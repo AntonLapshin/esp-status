@@ -38,7 +38,7 @@ Verify the ESP endpoint (expect ~310 bytes of JSON):
 
 ```bash
 curl http://localhost:8787/api/esp-status
-# {"ok":true,"proj":"timeline","loop":true,"status":"green","provider":"joingonka","model":"deepseek-ai/DeepSeek-V4-Flash-0731","succ":9,"total":10,"persona":"engineer","ago_s":47,...}
+# {"ok":true,"proj":"timeline","loop":true,"status":"green","provider":"joingonka","model":"deepseek-ai/DeepSeek-V4-Flash-0731","ok_n":9,"fail_n":1,"persona":"engineer","ago_s":47,...}
 ```
 
 > Firewall: port `8787` must be reachable from the LAN. If `curl http://<DEV-LAN-IP>:8787/api/esp-status`
@@ -55,7 +55,7 @@ Status colors (decided server-side, ESP just draws them):
 Screen layout (v5, top → bottom): header bar with project name + `ON`/`OFF`
 loop badge (loop status lives here, no dot) · `PROVIDER` large
 (e.g. `joingonka`) + small model line (e.g. `DeepSeek-V4-Flash-0731`) ·
-speedometer gauge (strict last-10 calls, animated needle) · `PERSONA` hero
+speedometer gauge (last-10 LLM calls as ok_n/fail_n, animated needle) · `PERSONA` hero
 glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`, …) + freshness (`47s ago`).
 
 ## 2. HOST machine — get this repo
@@ -142,7 +142,7 @@ pio device monitor -b 115200
 
 1. LCD shows `esp-status v5 / connecting <SSID>`, then your project name in the top bar with the `ON`/`OFF` loop badge.
 2. `PROVIDER` large (e.g. `joingonka`) + small model line (e.g. `MiniMax-M2.7`).
-3. Speedometer gauge (strict last-10 calls, animated needle).
+3. Speedometer gauge (last-10 LLM calls ok_n/fail_n, animated needle).
 4. `PERSONA` hero glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`) + freshness (`47s ago`).
 5. Serial log prints `ok green timeline joingonka MiniMax-M2.7 9/10 engineer 47s` each poll.
 

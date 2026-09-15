@@ -24,9 +24,9 @@ unsigned long lastPoll = 0;
 unsigned long lastTick = 0;
 
 // --- Last-10 gauge window ---------------------------------------------------
-// The server windows the gauge itself: `succ`/`total` arrive already capped
-// to the last 10 provider calls (total <= 10), so the device renders them
-// directly with no client-side delta reconstruction.
+// The server windows the gauge itself: `ok_n`/`fail_n` arrive already capped
+// to the last 10 LLM calls (ok_n + fail_n <= 10), so the device renders
+// ok_n / (ok_n + fail_n) directly with no client-side reconstruction.
 
 void connectWifi() {
   if (WiFi.status() == WL_CONNECTED) return;
@@ -64,24 +64,27 @@ bool fetchStatus(EspStatus& out, String& errMsg) {
   out.status = (s == "green") ? "green" : "red";
   out.provider = String((const char*)(doc["provider"] | "-"));
   out.model = String((const char*)(doc["model"] | "-"));
-  long rawSucc = doc["succ"] | 0;
-  long rawTotal = doc["total"] | 0;
-  // Server-windowed gauge (last 10 calls, total capped at 10): render
-  // directly. Clamp defensively so a stale cumulative backend can never
-  // overflow the gauge.
-  if (rawTotal < 0) rawTotal = 0;
-  if (rawTotal > 10) rawTotal = 10;
-  if (rawSucc < 0) rawSucc = 0;
-  if (rawSucc > rawTotal) rawSucc = rawTotal;
-  out.succ = rawSucc;
-  out.total = rawTotal;
+  long rawOk = doc["ok_n"] | 0;
+  long rawFail = doc["fail_n"] | 0;
+  // Server-windowed gauge (last 10 LLM calls, ok_n + fail_n <= 10): render
+  // ok_n / (ok_n + fail_n) directly. Clamp defensively so a stale backend
+  // can never overflow the gauge.
+  if (rawOk < 0) rawOk = 0;
+  if (rawFail < 0) rawFail = 0;
+  if (rawOk + rawFail > 10) {
+    long excess = rawOk + rawFail - 10;
+    long cutFail = excess < rawFail ? excess : rawFail;
+    rawFail -= cutFail;
+    excess -= cutFail;
+    if (excess > 0) rawOk -= excess;
+  }
+  out.ok_n = (int)rawOk;
+  out.fail_n = (int)rawFail;
   out.persona = String((const char*)(doc["persona"] | "-"));
   out.ago_s = doc["ago_s"] | -1;
-  // Legacy pre-v6 fields (still parsed for compat / serial log, except
-  // `runs` which v6 no longer sends).
+  // Legacy pre-v7 fields (still parsed for compat / serial log, except
+  // `succ`/`total` which v7 no longer sends).
   out.last = String((const char*)(doc["last"] | "-"));
-  out.ok_n = doc["ok_n"] | 0;
-  out.fail_n = doc["fail_n"] | 0;
   out.tok_today = doc["tok_today"] | 0;
   out.err = doc["err"] | 0;
   out.offline = false;
@@ -103,10 +106,10 @@ static void doPoll() {
   if (fetchStatus(next, err)) {
     current = next;
     uiDraw(tft, current, "");
-    Serial.printf("ok %s %s %s %s %ld/%ld %s %lds\n", current.status.c_str(),
+    Serial.printf("ok %s %s %s %s %d/%d %s %lds\n", current.status.c_str(),
                   current.proj.c_str(), current.provider.c_str(),
                   current.model.c_str(),
-                  current.succ, current.total,
+                  current.ok_n, current.ok_n + current.fail_n,
                   current.persona.c_str(), current.ago_s);
   } else {
     current.offline = true;
