@@ -38,7 +38,7 @@ Verify the ESP endpoint (expect ~310 bytes of JSON):
 
 ```bash
 curl http://localhost:8787/api/esp-status
-# {"ok":true,"proj":"timeline","loop":true,"status":"green","provider":"joingonka","model":"deepseek-ai/DeepSeek-V4-Flash-0731","succ":74,"total":99,"persona":"engineer","ago_s":47,...}
+# {"ok":true,"proj":"timeline","loop":true,"status":"green","provider":"joingonka","model":"deepseek-ai/DeepSeek-V4-Flash-0731","succ":9,"total":10,"persona":"engineer","ago_s":47,...}
 ```
 
 > Firewall: port `8787` must be reachable from the LAN. If `curl http://<DEV-LAN-IP>:8787/api/esp-status`

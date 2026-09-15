@@ -23,35 +23,10 @@ String lastErr = "boot";
 unsigned long lastPoll = 0;
 unsigned long lastTick = 0;
 
-// --- Rolling last-10 provider-call window -----------------------------------
-// The gauge shows strictly the last 10 provider calls actually observed by
-// this device. The server sends cumulative succ/total counters; individual
-// outcomes are inferred from counter deltas between polls and kept in a ring
-// buffer. Nothing is ever backfilled from cumulative totals — on boot,
-// counter reset, or provider switch the window starts empty and fills up as
-// new calls are observed.
-namespace {
-constexpr int kWinN = 10;
-bool winHist[kWinN];
-int winCount = 0;  // valid entries (0..10)
-int winIdx = 0;    // next write position
-long prevRawSucc = -1, prevRawTotal = -1;
-String prevRawProv = "";
-
-void winPush(bool ok) {
-  winHist[winIdx] = ok;
-  winIdx = (winIdx + 1) % kWinN;
-  if (winCount < kWinN) winCount++;
-}
-
-// Strict last-10: drop everything, wait for fresh deltas. No proportional
-// seeding from cumulative counters — that would mix lifetime history into
-// a gauge that must reflect only the most recent calls.
-void winClear() {
-  winCount = 0;
-  winIdx = 0;
-}
-}  // namespace
+// --- Last-10 gauge window ---------------------------------------------------
+// The server windows the gauge itself: `succ`/`total` arrive already capped
+// to the last 10 provider calls (total <= 10), so the device renders them
+// directly with no client-side delta reconstruction.
 
 void connectWifi() {
   if (WiFi.status() == WL_CONNECTED) return;
@@ -91,36 +66,15 @@ bool fetchStatus(EspStatus& out, String& errMsg) {
   out.model = String((const char*)(doc["model"] | "-"));
   long rawSucc = doc["succ"] | 0;
   long rawTotal = doc["total"] | 0;
-  // Fold cumulative counters into the strict last-10 window; gauge reads
-  // out.succ/total. Resets clear the window — no backfill from totals.
-  bool reset = (prevRawTotal < 0) || (out.provider != prevRawProv) ||
-               (rawTotal < prevRawTotal) || (rawSucc < 0) || (rawSucc > rawTotal) ||
-               (rawSucc < prevRawSucc);
-  if (reset) {
-    winClear();
-  } else {
-    long dSucc = rawSucc - prevRawSucc;
-    long dTotal = rawTotal - prevRawTotal;
-    if (dTotal > 0) {
-      if (dSucc < 0) dSucc = 0;
-      if (dSucc > dTotal) dSucc = dTotal;
-      long nSucc = dSucc, nFail = dTotal - dSucc;
-      // Keep only the most recent 10 of the batch (fails treated as newest).
-      if (nSucc + nFail > kWinN) {
-        if (nFail >= kWinN) { nSucc = 0; nFail = kWinN; }
-        else { nSucc = kWinN - nFail; }
-      }
-      for (long i = 0; i < nSucc; i++) winPush(true);
-      for (long i = 0; i < nFail; i++) winPush(false);
-    }
-  }
-  prevRawSucc = rawSucc;
-  prevRawTotal = rawTotal;
-  prevRawProv = out.provider;
-  long wSucc = 0;
-  for (int i = 0; i < winCount; i++) if (winHist[i]) wSucc++;
-  out.succ = wSucc;
-  out.total = winCount;
+  // Server-windowed gauge (last 10 calls, total capped at 10): render
+  // directly. Clamp defensively so a stale cumulative backend can never
+  // overflow the gauge.
+  if (rawTotal < 0) rawTotal = 0;
+  if (rawTotal > 10) rawTotal = 10;
+  if (rawSucc < 0) rawSucc = 0;
+  if (rawSucc > rawTotal) rawSucc = rawTotal;
+  out.succ = rawSucc;
+  out.total = rawTotal;
   out.persona = String((const char*)(doc["persona"] | "-"));
   out.ago_s = doc["ago_s"] | -1;
   // Legacy pre-v3 fields (still parsed for compat / serial log).
