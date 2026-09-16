@@ -42,9 +42,9 @@ GET http://<DEV-LAN-IP>:8787/api/esp-status
 | `lastAction` | last-action line, e.g. `commit 3m ago` (with `lastActionAgoS`) | newest GitHub-visible event (`issue.*`, `pr.*`, `git.push/commit/merge`); `-` when none yet |
 | `lastActionAgoS` | freshness suffix of the last-action line | seconds since `lastAction` (`-1` = never) |
 | `last10PersonaStatus` | PERSONA row: up to 10 bars, green=`true` / red=`false`, oldest left, newest right | up to 10 newest `health.jsonl` outcomes (one per whole persona-run invocation + one per retry), newest first on the wire; `[]` when none yet |
-| `lastPersonaCallFinished` | `Persona 5m ago` line, right after the Persona bars | seconds since the newest `health.jsonl` record (success or fail); `-1` when none yet |
+| `lastPersonaCallFinished` | `{ago}` line, right after the Persona bars (no "Persona" prefix) | seconds since the newest `health.jsonl` record (success or fail); `-1` when none yet |
 | `last10LlmStatus` | LLM row: up to 10 bars, green=`true` / red=`false`, oldest left, newest right | up to 10 newest `llm.jsonl` outcomes (one per finished individual LLM turn), newest first on the wire; `[]` when none yet |
-| `lastLlmCallFinished` | `LLM 30s ago` line | seconds since the newest `llm.jsonl` record (success or fail); `-1` when none yet |
+| `lastLlmCallFinished` | `{ago}` line (no "LLM" prefix) | seconds since the newest `llm.jsonl` record (success or fail); `-1` when none yet |
 
 v9 `last10LlmStatus`/`lastLlmCallFinished` meant whole persona runs and were
 renamed in v10 to `last10PersonaStatus`/`lastPersonaCallFinished`; the v10
@@ -53,7 +53,7 @@ v8 fields (`status`, `state`, `ok_n`/`fail_n`, `run_id`/`run_ok_n`,
 `act`/`act_t`/`act_ago_s`, `ago_s`, `last`, `tok_today`, `err`, `at`) were
 removed in v9 — old firmware must upgrade.
 
-## Display mapping (firmware v12)
+## Display mapping (firmware v13)
 
 - Header: green = loop on and not stuck, red = stuck or loop off.
   `grey` is ESP-side only (WiFi/HTTP failed).

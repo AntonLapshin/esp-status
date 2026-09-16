@@ -12,32 +12,33 @@
 #define COL_LGREY 0xC618
 #define COL_DGREY 0x7BEF
 
-// Layout v12 (170x320 portrait, works for rotation 0 and 2)
+// Layout v13 (170x320 portrait, works for rotation 0 and 2)
 //   header  -> project + ON/OFF loop badge (loop status lives here, no dot)
 //   model (size 2) / "PERSONA" caption (size 2) + up to 10 persona-run bars
 //   (green/red, right-aligned, solid grey bars on the left when < 10,
-//   newest rightmost with white top edge) / "Persona {ago}" freshness
-//   (size 2, right after the Persona bars) / "LLM" caption (size 2) +
-//   up to 10 per-turn LLM bars (same style) / "LLM {ago}" freshness
-//   (size 2) / last action + freshness (size 2) / persona glyph / large
-//   red STUCK banner when stuck. Every row has a breathing gap.
+//   newest rightmost with white top edge) / "{ago}" freshness
+//   (size 2, right after the Persona bars, no "Persona" prefix) / "LLM"
+//   caption (size 2) + up to 10 per-turn LLM bars (same style) / "{ago}"
+//   freshness (size 2, no "LLM" prefix) / last action + freshness (size 2) /
+//   persona glyph / large red STUCK banner when stuck.
+//   Every section is separated by an explicit breathing gap.
 #define TOP_H 28
 #define MODEL_Y 34
-#define PERSONA_CAP_Y 56
-#define PERSONA_BAR_TOP 76
-#define PERSONA_AGO_Y 96
-#define LLM_CAP_Y 118
-#define LLM_BAR_TOP 138
+#define PERSONA_CAP_Y 58
+#define PERSONA_BAR_TOP 80
+#define PERSONA_AGO_Y 102
+#define LLM_CAP_Y 130
+#define LLM_BAR_TOP 152
 #define BAR_H 14
 #define BAR_W 13
 #define BAR_GAP 3
 #define BAR_N 10
 #define BAR_X0 ((SCREEN_W - (BAR_N * BAR_W + (BAR_N - 1) * BAR_GAP)) / 2)
-#define LLM_AGO_Y 158
-#define ACT_Y 180
-#define PERS_Y 206
-#define STUCK_ZONE_TOP 256
-#define STUCK_Y 264
+#define LLM_AGO_Y 174
+#define ACT_Y 198
+#define PERS_Y 224
+#define STUCK_ZONE_TOP 264
+#define STUCK_Y 272
 
 // Header bar: grey while offline, red when stuck or loop off, green when on.
 static uint16_t headerColor(const EspStatus& st) {
@@ -98,11 +99,11 @@ static String modelText(const EspStatus& st) {
 }
 
 static String personaAgoText(const EspStatus& st) {
-  return "Persona " + fmtAgo(st.lastPersonaCallFinished);
+  return fmtAgo(st.lastPersonaCallFinished);
 }
 
 static String llmAgoText(const EspStatus& st) {
-  return "LLM " + fmtAgo(st.lastLlmCallFinished);
+  return fmtAgo(st.lastLlmCallFinished);
 }
 
 static String actionText(const EspStatus& st) {
@@ -129,7 +130,7 @@ void uiBoot(Adafruit_ST7789& tft, const String& ssid) {
   tft.setTextWrap(false);
   centerText(tft, "esp-status", 122, 3);
   tft.setTextColor(COL_DGREY, COL_BLACK);
-  String sub = "v12 connecting " + ssid;
+  String sub = "v13 connecting " + ssid;
   if (sub.length() > 28) sub = sub.substring(0, 28);
   centerText(tft, sub, 162, 1);
 }
@@ -191,7 +192,7 @@ static void drawCaption(Adafruit_ST7789& tft, const String& cap, int y) {
 }
 
 static void drawModel(Adafruit_ST7789& tft, const EspStatus& st) {
-  // Model line under the header (size 2, v12 style).
+  // Model line under the header (size 2, v13 style).
   tft.fillRect(0, TOP_H, SCREEN_W, PERSONA_CAP_Y - TOP_H, COL_BLACK);
   tft.setTextColor(COL_WHITE, COL_BLACK);
   centerText(tft, modelText(st), MODEL_Y, 2);
@@ -341,7 +342,7 @@ void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg) {
   prev = cur;
 }
 
-// --- animation frame: v12 has no animated elements ---------------------------
+// --- animation frame: v13 has no animated elements ---------------------------
 void uiTick(Adafruit_ST7789& tft, const EspStatus& st,
             unsigned long nowMs, unsigned long lastPollMs) {
   (void)tft;
