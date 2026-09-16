@@ -23,10 +23,12 @@ String lastErr = "boot";
 unsigned long lastPoll = 0;
 unsigned long lastTick = 0;
 
-// --- Last-10 LLM outcome bars ------------------------------------------------
-// The server sends `last10LlmStatus` (up to 10 booleans, newest first); the
-// device stores them oldest-first so bar 0 is the oldest (left) and the
-// last bar is the newest (right).
+// --- Persona-run + LLM-turn outcome bars -------------------------------------
+// The server sends `last10PersonaStatus` (whole persona runs) and
+// `last10LlmStatus` (individual LLM turns), both up to 10 booleans newest
+// first; the device stores them oldest-first so bar 0 is the oldest (left)
+// and the last bar is the newest (right). Fewer than 10 recorded -> solid
+// grey bars on the left (right-aligned data).
 
 void connectWifi() {
   if (WiFi.status() == WL_CONNECTED) return;
@@ -42,6 +44,17 @@ void connectWifi() {
   }
 }
 
+// Newest-first wire array -> oldest-first memory (bar 0 = oldest).
+static uint8_t parseBars(JsonArray arr, bool* out) {
+  if (arr.isNull()) return 0;
+  size_t n = arr.size();
+  if (n > 10) n = 10;
+  for (size_t i = 0; i < n; i++) {
+    out[i] = arr[n - 1 - i].as<bool>();
+  }
+  return (uint8_t)n;
+}
+
 bool fetchStatus(EspStatus& out, String& errMsg) {
   HTTPClient http;
   http.setTimeout(8000);
@@ -50,7 +63,7 @@ bool fetchStatus(EspStatus& out, String& errMsg) {
   if (code != 200) { errMsg = "http " + String(code); http.end(); return false; }
   String body = http.getString();
   http.end();
-  if (body.length() == 0 || body.length() > 2048) { errMsg = "bad body"; return false; }
+  if (body.length() == 0 || body.length() > 4096) { errMsg = "bad body"; return false; }
 
   JsonDocument doc;
   DeserializationError e = deserializeJson(doc, body);
@@ -64,17 +77,25 @@ bool fetchStatus(EspStatus& out, String& errMsg) {
   out.model = String((const char*)(doc["model"] | "-"));
   out.lastAction = String((const char*)(doc["lastAction"] | "-"));
   out.lastActionAgoS = doc["lastActionAgoS"] | -1;
-  // Newest-first on the wire -> oldest-first in memory (bar 0 = oldest).
-  out.llmCount = 0;
-  JsonArray arr = doc["last10LlmStatus"];
-  if (!arr.isNull()) {
-    size_t n = arr.size();
-    if (n > 10) n = 10;
-    for (size_t i = 0; i < n; i++) {
-      out.llmStatus[i] = arr[n - 1 - i].as<bool>();
-    }
-    out.llmCount = (uint8_t)n;
+  // v10 persona-run bars (+ fallback: v9 backends send persona outcomes in
+  // `last10LlmStatus` with no persona fields — mirror them so the PERSONA
+  // row still shows history during rollout).
+  JsonArray parr = doc["last10PersonaStatus"];
+  if (!parr.isNull()) {
+    out.personaCount = parseBars(parr, out.personaStatus);
+  } else {
+    JsonArray legacy = doc["last10LlmStatus"];
+    out.personaCount = parseBars(legacy, out.personaStatus);
   }
+  if (!doc["lastPersonaCallFinished"].isNull()) {
+    out.lastPersonaCallFinished = doc["lastPersonaCallFinished"] | -1;
+  } else {
+    out.lastPersonaCallFinished = doc["lastLlmCallFinished"] | -1;
+  }
+  // v10 true per-turn LLM bars (empty until the upgraded backend records
+  // llm.jsonl turns; on a v9 backend this mirrors the persona array above).
+  JsonArray larr = doc["last10LlmStatus"];
+  out.llmCount = parseBars(larr, out.llmStatus);
   out.lastLlmCallFinished = doc["lastLlmCallFinished"] | -1;
   out.offline = false;
   return true;
@@ -95,13 +116,14 @@ static void doPoll() {
   if (fetchStatus(next, err)) {
     current = next;
     uiDraw(tft, current, "");
-    Serial.printf("ok %s %s%s %s %s llm%lds act:%s %lds bars:%d\n",
+    Serial.printf("ok %s %s%s %s %s pers%lds llm%lds act:%s %lds pbars:%d lbars:%d\n",
                   current.proj.c_str(), current.loop ? "ON" : "OFF",
                   current.stuck ? " STUCK" : "",
                   current.persona.c_str(), current.model.c_str(),
+                  current.lastPersonaCallFinished,
                   current.lastLlmCallFinished,
                   current.lastAction.c_str(), current.lastActionAgoS,
-                  current.llmCount);
+                  current.personaCount, current.llmCount);
   } else {
     current.offline = true;
     lastErr = err.substring(0, 22);

@@ -2,12 +2,14 @@
 #include <Arduino.h>
 #include <Adafruit_ST7789.h>
 
-// v10 layout contract (see server/ENDPOINT.md):
-//   Project + ON/OFF loop badge (header) / model (size 2) / up to 10 LLM
-//   outcome bars (green=true, red=false, oldest left, newest right,
-//   half-height) / LLM freshness ("5m ago", size 2) / last GitHub-visible
-//   action + freshness ("commit 3m ago", size 2) / persona glyph / large red
-//   STUCK banner when stuck.
+// v11 layout contract (see server/ENDPOINT.md):
+//   Project + ON/OFF loop badge (header) / model (size 2) / PERSONA caption +
+//   up to 10 persona-run outcome bars (green=true, red=false, oldest left,
+//   newest right, right-aligned with solid grey bars on the left when fewer
+//   than 10 recorded) / "P {ago}" persona freshness (size 2) / LLM caption +
+//   up to 10 per-turn LLM outcome bars (same style) / "L {ago}" LLM freshness
+//   (size 2) / last GitHub-visible action + freshness ("commit 3m ago",
+//   size 2) / persona glyph / large red STUCK banner when stuck.
 struct EspStatus {
   bool ok = false;
   String proj = "";
@@ -17,6 +19,9 @@ struct EspStatus {
   String model = "-";      // effective LLM model, basename (e.g. MiniMax-M2.7)
   String lastAction = "-"; // e.g. "pushed feat/foo" ("-" when none yet)
   long lastActionAgoS = -1;
+  bool personaStatus[10];  // oldest first (reversed at parse); true=ok
+  uint8_t personaCount = 0; // valid entries in personaStatus (0..10)
+  long lastPersonaCallFinished = -1;
   bool llmStatus[10];      // oldest first (reversed at parse); true=ok
   uint8_t llmCount = 0;    // valid entries in llmStatus (0..10)
   long lastLlmCallFinished = -1;
@@ -33,6 +38,6 @@ void uiBoot(Adafruit_ST7789& tft, const String& ssid);
 void uiBootStatus(Adafruit_ST7789& tft, const String& msg);
 // Differential redraw: full frame once, then only dirty rects (no flicker).
 void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg);
-// Animation frame (call every ~40ms). v10 has no animated elements — no-op.
+// Animation frame (call every ~40ms). v11 has no animated elements — no-op.
 void uiTick(Adafruit_ST7789& tft, const EspStatus& st,
             unsigned long nowMs, unsigned long lastPollMs);

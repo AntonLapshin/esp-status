@@ -1,8 +1,10 @@
 # esp-status — auto-pi pocket monitor for ESP32
 
 IdeaSpark ESP32 (16 MB + 1.9" ST7789 170×320 LCD) shows the live status of your
-autonomous `auto-pi` loop: project + loop badge, the model, up to 10 green/red
-bars for the last LLM calls, the last GitHub-visible action, the active
+autonomous `auto-pi` loop: project + loop badge, the model, two 10-bar rows —
+`PERSONA` (whole persona-run outcomes) and `LLM` (individual LLM-turn
+outcomes) — each green/red with solid grey bars on the left when fewer than 10
+recorded, per-row freshness, the last GitHub-visible action, the active
 persona hero glyph and a large red STUCK banner when the loop is stuck. It
 polls a tiny JSON endpoint over your home WiFi every 15 seconds.
 
@@ -35,11 +37,11 @@ Find the DEV machine's LAN IP:
 hostname -I   # e.g. 192.168.1.50 — use the 192.168.x.x / 10.x.x.x one
 ```
 
-Verify the ESP endpoint (expect ~310 bytes of JSON):
+Verify the ESP endpoint (expect ~400 bytes of JSON):
 
 ```bash
 curl http://localhost:8787/api/esp-status
-# {"ok":true,"proj":"timeline","loop":true,"stuck":false,"persona":"engineer","model":"deepseek-ai/DeepSeek-V4-Flash-0731","lastAction":"pushed feat/foo","lastActionAgoS":300,"last10LlmStatus":[true,true,false,true],"lastLlmCallFinished":47}
+# {"ok":true,"proj":"timeline","loop":true,"stuck":false,"llmActive":true,"persona":"engineer","model":"deepseek-ai/DeepSeek-V4-Flash-0731","lastAction":"pushed feat/foo","lastActionAgoS":300,"last10PersonaStatus":[true,true,false,true],"lastPersonaCallFinished":300,"last10LlmStatus":[true,false,true,true],"lastLlmCallFinished":47}
 ```
 
 > Firewall: port `8787` must be reachable from the LAN. If `curl http://<DEV-LAN-IP>:8787/api/esp-status`
@@ -53,10 +55,12 @@ Header colors:
 | 🔴 red | Loop off, or stuck |
 | ⚫ grey | ESP offline (WiFi/HTTP failed) — ESP-side only |
 
-Screen layout (v9, top → bottom): header bar with project name + `ON`/`OFF`
-loop badge · small model line (e.g. `DeepSeek-V4-Flash-0731`) · `LLM` caption +
-up to 10 outcome bars (green = success, red = failure, oldest left, newest
-right with a white top edge) · `last llm call 5m ago` freshness · last
+Screen layout (v11, top → bottom): header bar with project name + `ON`/`OFF`
+loop badge · small model line (e.g. `DeepSeek-V4-Flash-0731`) · `PERSONA`
+caption + up to 10 persona-run bars (green = success, red = failure,
+right-aligned with solid grey bars on the left when fewer than 10, newest
+right with a white top edge) · `P 5m ago` persona freshness · `LLM` caption +
+up to 10 per-turn LLM bars (same style) · `L 30s ago` LLM freshness · last
 GitHub-visible action (e.g. `commit 3m ago`) · `PERSONA` hero glyph (`PM`,
 `ENGINEER`, `QA`, `REVIEW`, …) · large red `STUCK` banner when stuck.
 
@@ -142,12 +146,12 @@ pio device monitor -b 115200
 
 ## 7. What you should see
 
-1. LCD shows `esp-status v9 / connecting <SSID>`, then your project name in the top bar with the `ON`/`OFF` loop badge.
+1. LCD shows `esp-status v11 / connecting <SSID>`, then your project name in the top bar with the `ON`/`OFF` loop badge.
 2. Small model line (e.g. `MiniMax-M2.7`).
-3. Up to 10 green/red bars for the last LLM calls (oldest left, newest right).
-4. `last llm call 5m ago` freshness + last action (e.g. `commit 3m ago`).
-5. `PERSONA` hero glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`); large red `STUCK` when stuck.
-6. Serial log prints `ok timeline ON engineer MiniMax-M2.7 llm47s act:pushed feat/foo 300s bars:4` each poll.
+3. `PERSONA` row: up to 10 green/red bars for whole persona runs (right-aligned, grey bars on the left when fewer than 10) + `P 5m ago`.
+4. `LLM` row: up to 10 green/red bars for individual LLM turns (same style) + `L 30s ago`.
+5. Last action (e.g. `commit 3m ago`) + `PERSONA` hero glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`); large red `STUCK` when stuck.
+6. Serial log prints `ok timeline ON engineer MiniMax-M2.7 pers300s llm47s act:pushed feat/foo 300s pbars:4 lbars:5` each poll.
 
 ## Troubleshooting
 
@@ -167,7 +171,7 @@ esp-status/
   README.md                  ← you are here
   firmware/
     src/main.cpp             ← WiFi + HTTP poll + loop
-    src/ui.{h,cpp}           ← 170×320 portrait renderer (v9 layout)
+    src/ui.{h,cpp}           ← 170×320 portrait renderer (v11 layout)
     src/config.h             ← WiFi + SERVER_URL (edit me)
     platformio.ini           ← PlatformIO build (ST7789 flags)
     build-arduino-cli.sh     ← arduino-cli build/upload script

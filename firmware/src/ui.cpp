@@ -12,26 +12,31 @@
 #define COL_LGREY 0xC618
 #define COL_DGREY 0x7BEF
 
-// Layout v10 (170x320 portrait, works for rotation 0 and 2)
+// Layout v11 (170x320 portrait, works for rotation 0 and 2)
 //   header  -> project + ON/OFF loop badge (loop status lives here, no dot)
-//   model (size 2) / "LLM" caption (size 2) + up to 10 outcome bars
-//   (green/red, oldest left, newest right, half-height) / llm freshness
-//   ("{n} ago", size 2) / last action + freshness (size 2) / persona glyph /
-//   large red STUCK banner when stuck
-#define TOP_H 30
-#define MODEL_Y 42
-#define LLM_CAP_Y 68
-#define BAR_TOP 90
-#define BAR_H 20
+//   model (size 2) / "PERSONA" caption (size 2) + up to 10 persona-run bars
+//   (green/red, right-aligned, solid grey bars on the left when < 10,
+//   newest rightmost with white top edge) / "P {ago}" persona freshness
+//   (size 2) / "LLM" caption (size 2) + up to 10 per-turn LLM bars (same
+//   style) / "L {ago}" LLM freshness (size 2) / last action + freshness
+//   (size 2) / persona glyph / large red STUCK banner when stuck
+#define TOP_H 28
+#define MODEL_Y 36
+#define PERSONA_CAP_Y 56
+#define PERSONA_BAR_TOP 74
+#define LLM_CAP_Y 96
+#define LLM_BAR_TOP 114
+#define BAR_H 14
 #define BAR_W 13
 #define BAR_GAP 3
 #define BAR_N 10
 #define BAR_X0 ((SCREEN_W - (BAR_N * BAR_W + (BAR_N - 1) * BAR_GAP)) / 2)
-#define LLM_AGO_Y 122
-#define ACT_Y 150
-#define PERS_Y 188
-#define STUCK_ZONE_TOP 236
-#define STUCK_Y 244
+#define PERSONA_AGO_Y 136
+#define LLM_AGO_Y 152
+#define ACT_Y 172
+#define PERS_Y 204
+#define STUCK_ZONE_TOP 252
+#define STUCK_Y 260
 
 // Header bar: grey while offline, red when stuck or loop off, green when on.
 static uint16_t headerColor(const EspStatus& st) {
@@ -91,8 +96,12 @@ static String modelText(const EspStatus& st) {
   return m;
 }
 
+static String personaAgoText(const EspStatus& st) {
+  return "P " + fmtAgo(st.lastPersonaCallFinished);
+}
+
 static String llmAgoText(const EspStatus& st) {
-  return fmtAgo(st.lastLlmCallFinished);
+  return "L " + fmtAgo(st.lastLlmCallFinished);
 }
 
 static String actionText(const EspStatus& st) {
@@ -119,7 +128,7 @@ void uiBoot(Adafruit_ST7789& tft, const String& ssid) {
   tft.setTextWrap(false);
   centerText(tft, "esp-status", 122, 3);
   tft.setTextColor(COL_DGREY, COL_BLACK);
-  String sub = "v10 connecting " + ssid;
+  String sub = "v11 connecting " + ssid;
   if (sub.length() > 28) sub = sub.substring(0, 28);
   centerText(tft, sub, 162, 1);
 }
@@ -138,13 +147,16 @@ struct Snap {
   String loopBadge;
   uint16_t headerC = 0;
   String model;
-  uint16_t barsMask = 0; // bit i = llmStatus[i] (oldest first), valid < count
+  uint16_t personaMask = 0; // bit i = personaStatus[i] (oldest first), valid < count
+  uint8_t personaCount = 0;
+  String personaAgo;
+  uint16_t llmMask = 0; // bit i = llmStatus[i] (oldest first), valid < count
   uint8_t llmCount = 0;
   String llmAgo;
   String action;
   String persona;
   uint16_t personaC = 0;
-  uint8_t personaSize = 0;
+  uint8_t personaSz = 0;
   bool stuck = false;
   bool offline = true;
   bool valid = false;
@@ -156,10 +168,10 @@ static void drawTopBar(Adafruit_ST7789& tft, const EspStatus& st, uint16_t c) {
   // Project name, left-aligned.
   tft.setTextSize(2);
   tft.setTextColor(COL_BLACK, c);
-  tft.setCursor(6, 8);
+  tft.setCursor(6, 7);
   tft.print(titleText(st));
   // LOOP badge: black pill, top-right.
-  const int bw = 40, bh = 18, bx = SCREEN_W - bw - 6, by = 6;
+  const int bw = 40, bh = 18, bx = SCREEN_W - bw - 6, by = 5;
   tft.fillRect(bx, by, bw, bh, COL_BLACK);
   tft.setTextSize(1);
   tft.setTextColor(st.loop ? COL_GREEN : COL_RED, COL_BLACK);
@@ -178,34 +190,53 @@ static void drawCaption(Adafruit_ST7789& tft, const String& cap, int y) {
 }
 
 static void drawModel(Adafruit_ST7789& tft, const EspStatus& st) {
-  // Model line under the header (size 2, v10 style).
-  tft.fillRect(0, TOP_H, SCREEN_W, LLM_CAP_Y - TOP_H, COL_BLACK);
+  // Model line under the header (size 2, v11 style).
+  tft.fillRect(0, TOP_H, SCREEN_W, PERSONA_CAP_Y - TOP_H, COL_BLACK);
   tft.setTextColor(COL_WHITE, COL_BLACK);
   centerText(tft, modelText(st), MODEL_Y, 2);
 }
 
-// --- LLM outcome bars -------------------------------------------------------
-// Up to 10 bars, oldest left / newest right: green = success, red = failure.
-// Empty slots (fewer than 10 calls recorded) are dim outlines. The newest
-// bar gets a white top edge so recency is visible at a glance.
-static void drawBars(Adafruit_ST7789& tft, const EspStatus& st) {
-  tft.fillRect(0, LLM_CAP_Y - 2, SCREEN_W, BAR_TOP + BAR_H - LLM_CAP_Y + 2, COL_BLACK);
-  drawCaption(tft, "LLM", LLM_CAP_Y);
-  uint8_t n = st.llmCount > BAR_N ? BAR_N : st.llmCount;
+// --- outcome bars -----------------------------------------------------------
+// Up to 10 bars, right-aligned: data ends at the newest (right), empty slots
+// (< 10 recorded) are solid grey bars on the left. Recorded bars are
+// green = success, red = failure. The newest bar gets a white top edge so
+// recency is visible at a glance. Both PERSONA and LLM rows share this style.
+static void drawBarRow(Adafruit_ST7789& tft, const bool* status, uint8_t count, int barTop) {
+  uint8_t n = count > BAR_N ? BAR_N : count;
+  uint8_t empty = BAR_N - n;
   for (uint8_t i = 0; i < BAR_N; i++) {
     int x = BAR_X0 + i * (BAR_W + BAR_GAP);
-    if (i < n) {
-      uint16_t c = st.llmStatus[i] ? COL_GREEN : COL_RED;
-      tft.fillRect(x, BAR_TOP, BAR_W, BAR_H, c);
-      if (i == n - 1) tft.fillRect(x, BAR_TOP, BAR_W, 2, COL_WHITE);
+    if (i < empty) {
+      tft.fillRect(x, barTop, BAR_W, BAR_H, COL_GREY);
     } else {
-      tft.drawRect(x, BAR_TOP, BAR_W, BAR_H, COL_DGREY);
+      uint8_t di = i - empty; // 0..n-1, oldest left, newest right
+      uint16_t c = status[di] ? COL_GREEN : COL_RED;
+      tft.fillRect(x, barTop, BAR_W, BAR_H, c);
+      if (di == n - 1) tft.fillRect(x, barTop, BAR_W, 2, COL_WHITE);
     }
   }
 }
 
+static void drawPersonaBars(Adafruit_ST7789& tft, const EspStatus& st) {
+  tft.fillRect(0, PERSONA_CAP_Y - 2, SCREEN_W, PERSONA_BAR_TOP + BAR_H - PERSONA_CAP_Y + 2, COL_BLACK);
+  drawCaption(tft, "PERSONA", PERSONA_CAP_Y);
+  drawBarRow(tft, st.personaStatus, st.personaCount, PERSONA_BAR_TOP);
+}
+
+static void drawLlmBars(Adafruit_ST7789& tft, const EspStatus& st) {
+  tft.fillRect(0, LLM_CAP_Y - 2, SCREEN_W, LLM_BAR_TOP + BAR_H - LLM_CAP_Y + 2, COL_BLACK);
+  drawCaption(tft, "LLM", LLM_CAP_Y);
+  drawBarRow(tft, st.llmStatus, st.llmCount, LLM_BAR_TOP);
+}
+
+static void drawPersonaAgo(Adafruit_ST7789& tft, const EspStatus& st) {
+  tft.fillRect(0, PERSONA_AGO_Y - 2, SCREEN_W, LLM_AGO_Y - PERSONA_AGO_Y, COL_BLACK);
+  tft.setTextColor(COL_LGREY, COL_BLACK);
+  centerText(tft, personaAgoText(st), PERSONA_AGO_Y, 2);
+}
+
 static void drawLlmAgo(Adafruit_ST7789& tft, const EspStatus& st) {
-  tft.fillRect(0, LLM_AGO_Y - 4, SCREEN_W, ACT_Y - LLM_AGO_Y, COL_BLACK);
+  tft.fillRect(0, LLM_AGO_Y - 2, SCREEN_W, ACT_Y - LLM_AGO_Y, COL_BLACK);
   tft.setTextColor(COL_LGREY, COL_BLACK);
   centerText(tft, llmAgoText(st), LLM_AGO_Y, 2);
 }
@@ -218,7 +249,7 @@ static void drawAction(Adafruit_ST7789& tft, const EspStatus& st) {
 
 static void drawPersona(Adafruit_ST7789& tft, const EspStatus& st) {
   // Persona glyph; clears down to the STUCK zone (freshness now lives in
-  // the llm/action lines above).
+  // the persona/llm lines above).
   tft.fillRect(0, PERS_Y - 10, SCREEN_W, STUCK_ZONE_TOP - (PERS_Y - 10), COL_BLACK);
   String disp = personaDisplay(st.persona);
   uint16_t pc = personaColor(st.persona);
@@ -238,7 +269,9 @@ static void drawFull(Adafruit_ST7789& tft, const EspStatus& st, uint16_t c) {
   tft.setTextWrap(false);
   drawTopBar(tft, st, c);
   drawModel(tft, st);
-  drawBars(tft, st);
+  drawPersonaBars(tft, st);
+  drawPersonaAgo(tft, st);
+  drawLlmBars(tft, st);
   drawLlmAgo(tft, st);
   drawAction(tft, st);
   drawPersona(tft, st);
@@ -251,17 +284,24 @@ static Snap snapOf(const EspStatus& st) {
   cur.loopBadge = st.loop ? "ON" : "OFF";
   cur.headerC = headerColor(st);
   cur.model = modelText(st);
-  cur.barsMask = 0;
+  cur.personaMask = 0;
+  uint8_t pn = st.personaCount > BAR_N ? BAR_N : st.personaCount;
+  for (uint8_t i = 0; i < pn; i++) {
+    if (st.personaStatus[i]) cur.personaMask |= (uint16_t)(1u << i);
+  }
+  cur.personaCount = pn;
+  cur.personaAgo = personaAgoText(st);
+  cur.llmMask = 0;
   uint8_t n = st.llmCount > BAR_N ? BAR_N : st.llmCount;
   for (uint8_t i = 0; i < n; i++) {
-    if (st.llmStatus[i]) cur.barsMask |= (uint16_t)(1u << i);
+    if (st.llmStatus[i]) cur.llmMask |= (uint16_t)(1u << i);
   }
   cur.llmCount = n;
   cur.llmAgo = llmAgoText(st);
   cur.action = actionText(st);
   cur.persona = personaDisplay(st.persona);
   cur.personaC = personaColor(st.persona);
-  cur.personaSize = personaSize(cur.persona);
+  cur.personaSz = personaSize(cur.persona);
   cur.stuck = st.stuck;
   cur.offline = st.offline;
   cur.valid = true;
@@ -285,18 +325,20 @@ void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg) {
     drawTopBar(tft, st, c);
   }
   if (cur.model != prev.model) drawModel(tft, st);
-  if (cur.barsMask != prev.barsMask || cur.llmCount != prev.llmCount) drawBars(tft, st);
+  if (cur.personaMask != prev.personaMask || cur.personaCount != prev.personaCount) drawPersonaBars(tft, st);
+  if (cur.personaAgo != prev.personaAgo) drawPersonaAgo(tft, st);
+  if (cur.llmMask != prev.llmMask || cur.llmCount != prev.llmCount) drawLlmBars(tft, st);
   if (cur.llmAgo != prev.llmAgo) drawLlmAgo(tft, st);
   if (cur.action != prev.action) drawAction(tft, st);
   if (cur.persona != prev.persona || cur.personaC != prev.personaC ||
-      cur.personaSize != prev.personaSize)
+      cur.personaSz != prev.personaSz)
     drawPersona(tft, st);
   if (cur.stuck != prev.stuck) drawStuck(tft, st);
 
   prev = cur;
 }
 
-// --- animation frame: v10 has no animated elements ---------------------------
+// --- animation frame: v11 has no animated elements ---------------------------
 void uiTick(Adafruit_ST7789& tft, const EspStatus& st,
             unsigned long nowMs, unsigned long lastPollMs) {
   (void)tft;

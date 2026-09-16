@@ -2,7 +2,7 @@
 
 Live implementation: `auto-pi/ui/server/server.js` → `buildEspStatus()`.
 
-Tiny aggregated JSON for ESP32 polling over LAN (~250 bytes, `Cache-Control: no-store`).
+Tiny aggregated JSON for ESP32 polling over LAN (~400 bytes, `Cache-Control: no-store`).
 Full dashboards should use `/api/status` instead.
 
 ## Request
@@ -11,7 +11,7 @@ Full dashboards should use `/api/status` instead.
 GET http://<DEV-LAN-IP>:8787/api/esp-status
 ```
 
-## Response 200 (v9)
+## Response 200 (v10)
 
 ```json
 {
@@ -19,11 +19,14 @@ GET http://<DEV-LAN-IP>:8787/api/esp-status
   "proj": "timeline",
   "loop": true,
   "stuck": false,
+  "llmActive": true,
   "persona": "engineer",
   "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
   "lastAction": "pushed feat/foo",
   "lastActionAgoS": 300,
-  "last10LlmStatus": [true, true, false, true],
+  "last10PersonaStatus": [true, true, false, true],
+  "lastPersonaCallFinished": 300,
+  "last10LlmStatus": [true, false, true, true, true],
   "lastLlmCallFinished": 47
 }
 ```
@@ -33,24 +36,31 @@ GET http://<DEV-LAN-IP>:8787/api/esp-status
 | `proj` | header: project name | active project name (max 24 chars) |
 | `loop` | header: `ON` / `OFF` badge (+ header green/red) | `.pi/state/loop.lock` liveness (stop file forces `false`) |
 | `stuck` | `STUCK` banner, large red text | active persona record older than `loop.personaTimeoutMs` (default 1h), silent longer than `loop.personaInactivityMs` (default 10m), or active while the loop is dead |
+| `llmActive` | `working…` state (stale bars but child alive) | active run with a live `pi` child |
 | `persona` | hero glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`, …) | active persona (started run wins, else last run) |
-| `model` | small model line (basename after `/`, max 28 chars) | effective pi model (config → `PI_*` env → pi settings → `health.jsonl` fallback) |
+| `model` | small model line (basename after `/`, max 28 chars) | effective pi model (config → `PI_*` env → pi settings → `health.jsonl`/`llm.jsonl` fallback) |
 | `lastAction` | last-action line, e.g. `commit 3m ago` (with `lastActionAgoS`) | newest GitHub-visible event (`issue.*`, `pr.*`, `git.push/commit/merge`); `-` when none yet |
 | `lastActionAgoS` | freshness suffix of the last-action line | seconds since `lastAction` (`-1` = never) |
-| `last10LlmStatus` | up to 10 bars, green=`true` / red=`false`, oldest left, newest right | up to 10 newest `health.jsonl` outcomes (success or fail), newest first on the wire; `[]` when none yet |
-| `lastLlmCallFinished` | `last llm call 5m ago` line | seconds since the newest `health.jsonl` record (success or fail); `-1` when none yet |
+| `last10PersonaStatus` | PERSONA row: up to 10 bars, green=`true` / red=`false`, oldest left, newest right | up to 10 newest `health.jsonl` outcomes (one per whole persona-run invocation + one per retry), newest first on the wire; `[]` when none yet |
+| `lastPersonaCallFinished` | `P 5m ago` line | seconds since the newest `health.jsonl` record (success or fail); `-1` when none yet |
+| `last10LlmStatus` | LLM row: up to 10 bars, green=`true` / red=`false`, oldest left, newest right | up to 10 newest `llm.jsonl` outcomes (one per finished individual LLM turn), newest first on the wire; `[]` when none yet |
+| `lastLlmCallFinished` | `L 30s ago` line | seconds since the newest `llm.jsonl` record (success or fail); `-1` when none yet |
 
+v9 `last10LlmStatus`/`lastLlmCallFinished` meant whole persona runs and were
+renamed in v10 to `last10PersonaStatus`/`lastPersonaCallFinished`; the v10
+`last10LlmStatus`/`lastLlmCallFinished` are true per-turn LLM calls.
 v8 fields (`status`, `state`, `ok_n`/`fail_n`, `run_id`/`run_ok_n`,
 `act`/`act_t`/`act_ago_s`, `ago_s`, `last`, `tok_today`, `err`, `at`) were
 removed in v9 — old firmware must upgrade.
 
-## Display mapping (firmware)
+## Display mapping (firmware v11)
 
 - Header: green = loop on and not stuck, red = stuck or loop off.
   `grey` is ESP-side only (WiFi/HTTP failed).
 - Persona colors: PM gold, engineer cyan, QA green, review magenta.
-- Bars: filled green/red for recorded calls, dim outline for empty slots;
-  newest bar gets a white top edge.
+- Bars: both PERSONA and LLM rows render the same way — filled green/red for
+  recorded outcomes, right-aligned (newest bar rightmost with a white top
+  edge); empty slots (fewer than 10 recorded) are solid grey bars on the left.
 
 ## Errors
 
