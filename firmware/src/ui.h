@@ -2,12 +2,12 @@
 #include <Arduino.h>
 #include <Adafruit_ST7789.h>
 
-// v9 layout contract (see server/ENDPOINT.md):
-//   Project + ON/OFF loop badge (header) / model (small) / up to 10 LLM
-//   outcome bars (green=true, red=false, oldest left, newest right) /
-//   last-LLM-call freshness ("last llm call 5m ago") / last GitHub-visible
-//   action + freshness ("commit 3m ago") / persona glyph / large red STUCK
-//   banner when stuck.
+// v10 layout contract (see server/ENDPOINT.md):
+//   Project + ON/OFF loop badge (header) / model (size 2) / up to 10 LLM
+//   outcome bars (green=true, red=false, oldest left, newest right,
+//   half-height) / LLM freshness ("5m ago", size 2) / last GitHub-visible
+//   action + freshness ("commit 3m ago", size 2) / persona glyph / large red
+//   STUCK banner when stuck.
 struct EspStatus {
   bool ok = false;
   String proj = "";
@@ -33,6 +33,6 @@ void uiBoot(Adafruit_ST7789& tft, const String& ssid);
 void uiBootStatus(Adafruit_ST7789& tft, const String& msg);
 // Differential redraw: full frame once, then only dirty rects (no flicker).
 void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg);
-// Animation frame (call every ~40ms). v9 has no animated elements — no-op.
+// Animation frame (call every ~40ms). v10 has no animated elements — no-op.
 void uiTick(Adafruit_ST7789& tft, const EspStatus& st,
             unsigned long nowMs, unsigned long lastPollMs);

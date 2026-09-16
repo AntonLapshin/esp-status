@@ -12,25 +12,26 @@
 #define COL_LGREY 0xC618
 #define COL_DGREY 0x7BEF
 
-// Layout v9 (170x320 portrait, works for rotation 0 and 2)
+// Layout v10 (170x320 portrait, works for rotation 0 and 2)
 //   header  -> project + ON/OFF loop badge (loop status lives here, no dot)
-//   model (small) / "LLM" caption + up to 10 outcome bars (green/red,
-//   oldest left, newest right) / last-llm-call freshness / last action +
-//   freshness / persona glyph / large red STUCK banner when stuck
+//   model (size 2) / "LLM" caption (size 2) + up to 10 outcome bars
+//   (green/red, oldest left, newest right, half-height) / llm freshness
+//   ("{n} ago", size 2) / last action + freshness (size 2) / persona glyph /
+//   large red STUCK banner when stuck
 #define TOP_H 30
-#define MODEL_Y 38
-#define LLM_CAP_Y 54
-#define BAR_TOP 64
-#define BAR_H 40
+#define MODEL_Y 42
+#define LLM_CAP_Y 68
+#define BAR_TOP 90
+#define BAR_H 20
 #define BAR_W 13
 #define BAR_GAP 3
 #define BAR_N 10
 #define BAR_X0 ((SCREEN_W - (BAR_N * BAR_W + (BAR_N - 1) * BAR_GAP)) / 2)
-#define LLM_AGO_Y 112
-#define ACT_Y 130
-#define PERS_Y 152
-#define STUCK_ZONE_TOP 226
-#define STUCK_Y 232
+#define LLM_AGO_Y 122
+#define ACT_Y 150
+#define PERS_Y 188
+#define STUCK_ZONE_TOP 236
+#define STUCK_Y 244
 
 // Header bar: grey while offline, red when stuck or loop off, green when on.
 static uint16_t headerColor(const EspStatus& st) {
@@ -83,23 +84,23 @@ static String titleText(const EspStatus& st) {
 static String modelText(const EspStatus& st) {
   String m = st.model.length() ? st.model : "-";
   // Show the model basename ("org/MiniMax-M2.7" -> "MiniMax-M2.7").
-  // Size-1 font fits 28 chars.
+  // Size-2 font fits 14 chars.
   int slash = m.lastIndexOf('/');
   if (slash >= 0) m = m.substring(slash + 1);
-  if (m.length() > 28) m = m.substring(0, 28);
+  if (m.length() > 14) m = m.substring(0, 14);
   return m;
 }
 
 static String llmAgoText(const EspStatus& st) {
-  return "last llm call " + fmtAgo(st.lastLlmCallFinished);
+  return fmtAgo(st.lastLlmCallFinished);
 }
 
 static String actionText(const EspStatus& st) {
   if (st.lastAction.length() == 0 || st.lastAction == "-") return "no action yet";
   String ago = fmtAgo(st.lastActionAgoS);
-  // Size-1 font fits 28 chars; truncate the label, keep the freshness suffix.
-  int keep = 28 - (int)ago.length() - 1;
-  if (keep < 8) keep = 8;
+  // Size-2 font fits 14 chars; truncate the label, keep the freshness suffix.
+  int keep = 14 - (int)ago.length() - 1;
+  if (keep < 4) keep = 4;
   String a = st.lastAction;
   if ((int)a.length() > keep) a = a.substring(0, keep);
   return a + " " + ago;
@@ -118,7 +119,7 @@ void uiBoot(Adafruit_ST7789& tft, const String& ssid) {
   tft.setTextWrap(false);
   centerText(tft, "esp-status", 122, 3);
   tft.setTextColor(COL_DGREY, COL_BLACK);
-  String sub = "v9 connecting " + ssid;
+  String sub = "v10 connecting " + ssid;
   if (sub.length() > 28) sub = sub.substring(0, 28);
   centerText(tft, sub, 162, 1);
 }
@@ -171,16 +172,16 @@ static void drawTopBar(Adafruit_ST7789& tft, const EspStatus& st, uint16_t c) {
 }
 
 static void drawCaption(Adafruit_ST7789& tft, const String& cap, int y) {
-  tft.setTextSize(1);
+  tft.setTextSize(2);
   tft.setTextColor(COL_DGREY, COL_BLACK);
-  centerText(tft, cap, y, 1);
+  centerText(tft, cap, y, 2);
 }
 
 static void drawModel(Adafruit_ST7789& tft, const EspStatus& st) {
-  // Small model line under the header (no caption — single line, v9 style).
+  // Model line under the header (size 2, v10 style).
   tft.fillRect(0, TOP_H, SCREEN_W, LLM_CAP_Y - TOP_H, COL_BLACK);
   tft.setTextColor(COL_WHITE, COL_BLACK);
-  centerText(tft, modelText(st), MODEL_Y, 1);
+  centerText(tft, modelText(st), MODEL_Y, 2);
 }
 
 // --- LLM outcome bars -------------------------------------------------------
@@ -206,13 +207,13 @@ static void drawBars(Adafruit_ST7789& tft, const EspStatus& st) {
 static void drawLlmAgo(Adafruit_ST7789& tft, const EspStatus& st) {
   tft.fillRect(0, LLM_AGO_Y - 4, SCREEN_W, ACT_Y - LLM_AGO_Y, COL_BLACK);
   tft.setTextColor(COL_LGREY, COL_BLACK);
-  centerText(tft, llmAgoText(st), LLM_AGO_Y, 1);
+  centerText(tft, llmAgoText(st), LLM_AGO_Y, 2);
 }
 
 static void drawAction(Adafruit_ST7789& tft, const EspStatus& st) {
   tft.fillRect(0, ACT_Y - 4, SCREEN_W, PERS_Y - 10 - ACT_Y + 4, COL_BLACK);
   tft.setTextColor(COL_WHITE, COL_BLACK);
-  centerText(tft, actionText(st), ACT_Y, 1);
+  centerText(tft, actionText(st), ACT_Y, 2);
 }
 
 static void drawPersona(Adafruit_ST7789& tft, const EspStatus& st) {
@@ -295,7 +296,7 @@ void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg) {
   prev = cur;
 }
 
-// --- animation frame: v9 has no animated elements ---------------------------
+// --- animation frame: v10 has no animated elements ---------------------------
 void uiTick(Adafruit_ST7789& tft, const EspStatus& st,
             unsigned long nowMs, unsigned long lastPollMs) {
   (void)tft;
