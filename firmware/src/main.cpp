@@ -23,10 +23,10 @@ String lastErr = "boot";
 unsigned long lastPoll = 0;
 unsigned long lastTick = 0;
 
-// --- Last-10 gauge window ---------------------------------------------------
-// The server windows the gauge itself: `ok_n`/`fail_n` arrive already capped
-// to the last 10 LLM calls (ok_n + fail_n <= 10), so the device renders
-// ok_n / (ok_n + fail_n) directly with no client-side reconstruction.
+// --- Last-10 LLM outcome bars ------------------------------------------------
+// The server sends `last10LlmStatus` (up to 10 booleans, newest first); the
+// device stores them oldest-first so bar 0 is the oldest (left) and the
+// last bar is the newest (right).
 
 void connectWifi() {
   if (WiFi.status() == WL_CONNECTED) return;
@@ -59,34 +59,23 @@ bool fetchStatus(EspStatus& out, String& errMsg) {
   out.ok = doc["ok"] | false;
   out.proj = String((const char*)(doc["proj"] | ""));
   out.loop = doc["loop"] | false;
-  // v3 contract is binary GREEN/RED; map legacy yellow/grey to red.
-  String s = String((const char*)(doc["status"] | "red"));
-  out.status = (s == "green") ? "green" : "red";
-  out.provider = String((const char*)(doc["provider"] | "-"));
-  out.model = String((const char*)(doc["model"] | "-"));
-  long rawOk = doc["ok_n"] | 0;
-  long rawFail = doc["fail_n"] | 0;
-  // Server-windowed gauge (last 10 LLM calls, ok_n + fail_n <= 10): render
-  // ok_n / (ok_n + fail_n) directly. Clamp defensively so a stale backend
-  // can never overflow the gauge.
-  if (rawOk < 0) rawOk = 0;
-  if (rawFail < 0) rawFail = 0;
-  if (rawOk + rawFail > 10) {
-    long excess = rawOk + rawFail - 10;
-    long cutFail = excess < rawFail ? excess : rawFail;
-    rawFail -= cutFail;
-    excess -= cutFail;
-    if (excess > 0) rawOk -= excess;
-  }
-  out.ok_n = (int)rawOk;
-  out.fail_n = (int)rawFail;
+  out.stuck = doc["stuck"] | false;
   out.persona = String((const char*)(doc["persona"] | "-"));
-  out.ago_s = doc["ago_s"] | -1;
-  // Legacy pre-v7 fields (still parsed for compat / serial log, except
-  // `succ`/`total` which v7 no longer sends).
-  out.last = String((const char*)(doc["last"] | "-"));
-  out.tok_today = doc["tok_today"] | 0;
-  out.err = doc["err"] | 0;
+  out.model = String((const char*)(doc["model"] | "-"));
+  out.lastAction = String((const char*)(doc["lastAction"] | "-"));
+  out.lastActionAgoS = doc["lastActionAgoS"] | -1;
+  // Newest-first on the wire -> oldest-first in memory (bar 0 = oldest).
+  out.llmCount = 0;
+  JsonArray arr = doc["last10LlmStatus"];
+  if (!arr.isNull()) {
+    size_t n = arr.size();
+    if (n > 10) n = 10;
+    for (size_t i = 0; i < n; i++) {
+      out.llmStatus[i] = arr[n - 1 - i].as<bool>();
+    }
+    out.llmCount = (uint8_t)n;
+  }
+  out.lastLlmCallFinished = doc["lastLlmCallFinished"] | -1;
   out.offline = false;
   return true;
 }
@@ -106,11 +95,13 @@ static void doPoll() {
   if (fetchStatus(next, err)) {
     current = next;
     uiDraw(tft, current, "");
-    Serial.printf("ok %s %s %s %s %d/%d %s %lds\n", current.status.c_str(),
-                  current.proj.c_str(), current.provider.c_str(),
-                  current.model.c_str(),
-                  current.ok_n, current.ok_n + current.fail_n,
-                  current.persona.c_str(), current.ago_s);
+    Serial.printf("ok %s %s%s %s %s llm%lds act:%s %lds bars:%d\n",
+                  current.proj.c_str(), current.loop ? "ON" : "OFF",
+                  current.stuck ? " STUCK" : "",
+                  current.persona.c_str(), current.model.c_str(),
+                  current.lastLlmCallFinished,
+                  current.lastAction.c_str(), current.lastActionAgoS,
+                  current.llmCount);
   } else {
     current.offline = true;
     lastErr = err.substring(0, 22);

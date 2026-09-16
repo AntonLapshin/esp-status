@@ -2,7 +2,7 @@
 
 Live implementation: `auto-pi/ui/server/server.js` → `buildEspStatus()`.
 
-Tiny aggregated JSON for ESP32 polling over LAN (~310 bytes, `Cache-Control: no-store`).
+Tiny aggregated JSON for ESP32 polling over LAN (~250 bytes, `Cache-Control: no-store`).
 Full dashboards should use `/api/status` instead.
 
 ## Request
@@ -11,48 +11,46 @@ Full dashboards should use `/api/status` instead.
 GET http://<DEV-LAN-IP>:8787/api/esp-status
 ```
 
-## Response 200 (v7)
+## Response 200 (v9)
 
 ```json
 {
   "ok": true,
   "proj": "timeline",
   "loop": true,
-  "status": "green",
-  "provider": "joingonka",
-  "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
-  "ok_n": 9,
-  "fail_n": 1,
+  "stuck": false,
   "persona": "engineer",
-  "ago_s": 47,
-  "at": "2026-09-13T18:32:38.206Z"
+  "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
+  "lastAction": "pushed feat/foo",
+  "lastActionAgoS": 300,
+  "last10LlmStatus": [true, true, false, true],
+  "lastLlmCallFinished": 47
 }
 ```
 
 | Field | UI element | Source |
 |---|---|---|
 | `proj` | header: project name | active project name (max 24 chars) |
-| `loop` | header: `ON` / `OFF` badge | `.pi/state/loop.lock` liveness |
-| `status` | pulsating dot: `green` / `red` | green = loop on + last run healthy + (a persona actively running OR fresh activity ≤ 15 min); else red |
-| `provider` | `PROVIDER` line | effective pi provider (config → `PI_*` env → pi settings → pi `auth.json` → env hint) |
-| `model` | small model line under the provider (basename after `/`, max 28 chars) | effective pi model (config → `PI_*` env → pi settings → `health.jsonl` fallback) |
-| `ok_n`, `fail_n` | `SUCCESS` gauge (last 10 LLM calls, e.g. `9/10 90%`) | successful / failed LLM calls over the last 10 `health.jsonl` records (`ok_n + fail_n <= 10`, fewer when less than 10 calls exist; firmware renders `ok_n / (ok_n + fail_n)`) |
-| `persona` | `PERSONA` hero glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`, …) | active persona (started run wins, else last run) |
-| `ago_s` | freshness (`47s ago`, footer) | seconds since last run/event (`-1` = never) |
+| `loop` | header: `ON` / `OFF` badge (+ header green/red) | `.pi/state/loop.lock` liveness (stop file forces `false`) |
+| `stuck` | `STUCK` banner, large red text | active persona record older than `loop.personaTimeoutMs` (default 1h), silent longer than `loop.personaInactivityMs` (default 10m), or active while the loop is dead |
+| `persona` | hero glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`, …) | active persona (started run wins, else last run) |
+| `model` | small model line (basename after `/`, max 28 chars) | effective pi model (config → `PI_*` env → pi settings → `health.jsonl` fallback) |
+| `lastAction` | last-action line, e.g. `commit 3m ago` (with `lastActionAgoS`) | newest GitHub-visible event (`issue.*`, `pr.*`, `git.push/commit/merge`); `-` when none yet |
+| `lastActionAgoS` | freshness suffix of the last-action line | seconds since `lastAction` (`-1` = never) |
+| `last10LlmStatus` | up to 10 bars, green=`true` / red=`false`, oldest left, newest right | up to 10 newest `health.jsonl` outcomes (success or fail), newest first on the wire; `[]` when none yet |
+| `lastLlmCallFinished` | `last llm call 5m ago` line | seconds since the newest `health.jsonl` record (success or fail); `-1` when none yet |
 
-Legacy fields (`last`, `tok_today`, `err`) are still
-sent so pre-v7 firmware keeps working. `succ`/`total` were removed in v7 —
-they duplicated the same last-10 LLM-call window; `ok_n`/`fail_n` now carry
-the LLM-call outcome directly.
+v8 fields (`status`, `state`, `ok_n`/`fail_n`, `run_id`/`run_ok_n`,
+`act`/`act_t`/`act_ago_s`, `ago_s`, `last`, `tok_today`, `err`, `at`) were
+removed in v9 — old firmware must upgrade.
 
 ## Display mapping (firmware)
 
-- Dot: `green` = healthy loop, `red` = stopped / stale / recent error.
+- Header: green = loop on and not stuck, red = stuck or loop off.
   `grey` is ESP-side only (WiFi/HTTP failed).
 - Persona colors: PM gold, engineer cyan, QA green, review magenta.
-- Gauge: green ≥ 90 %, yellow ≥ 60 %, red below. The server windows the gauge
-  to the last 10 LLM calls (`ok_n + fail_n <= 10`); the firmware renders
-  `ok_n / (ok_n + fail_n)` directly (clamped defensively to 0..10).
+- Bars: filled green/red for recorded calls, dim outline for empty slots;
+  newest bar gets a white top edge.
 
 ## Errors
 

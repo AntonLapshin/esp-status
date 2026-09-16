@@ -1,10 +1,5 @@
 #include "ui.h"
 #include "config.h"
-#include <math.h>
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 #define COL_BLACK 0x0000
 #define COL_WHITE 0xFFFF
@@ -13,33 +8,35 @@
 #define COL_RED 0xF800
 #define COL_CYAN 0x07FF
 #define COL_MAGENTA 0xF81F
-#define COL_ORANGE 0xFD20
 #define COL_GREY 0x8410
 #define COL_LGREY 0xC618
 #define COL_DGREY 0x7BEF
-#define COL_GAUGE_BG 0x18E3
 
-// Layout v5 (170x320 portrait, works for rotation 0 and 2)
-//   header  -> project + LOOP badge (loop status lives here, no dot)
-//   provider (large) + model (small) / speedometer gauge (no text) /
-//   persona glyph + ago (no SUCCESS/PERSONA captions, no footer, no poll bar)
+// Layout v9 (170x320 portrait, works for rotation 0 and 2)
+//   header  -> project + ON/OFF loop badge (loop status lives here, no dot)
+//   model (small) / "LLM" caption + up to 10 outcome bars (green/red,
+//   oldest left, newest right) / last-llm-call freshness / last action +
+//   freshness / persona glyph / large red STUCK banner when stuck
 #define TOP_H 30
-#define PROV_CAP_Y 44
-#define PROV_Y 56
-#define MODEL_Y 90
-#define GAUGE_CX (SCREEN_W / 2)
-#define GAUGE_CY 184
-#define GAUGE_R 54
-#define GAUGE_ZONE_TOP 112
-#define GAUGE_ZONE_BOT 202
-#define PERS_Y 212
-#define AGO_Y 258
+#define MODEL_Y 38
+#define LLM_CAP_Y 54
+#define BAR_TOP 64
+#define BAR_H 40
+#define BAR_W 13
+#define BAR_GAP 3
+#define BAR_N 10
+#define BAR_X0 ((SCREEN_W - (BAR_N * BAR_W + (BAR_N - 1) * BAR_GAP)) / 2)
+#define LLM_AGO_Y 112
+#define ACT_Y 130
+#define PERS_Y 152
+#define STUCK_ZONE_TOP 226
+#define STUCK_Y 232
 
-uint16_t statusColor(const String& s) {
-  if (s == "green") return COL_GREEN;
-  if (s == "red") return COL_RED;
-  if (s == "yellow") return COL_YELLOW; // legacy pre-v3 servers
-  return COL_GREY; // grey / offline
+// Header bar: grey while offline, red when stuck or loop off, green when on.
+static uint16_t headerColor(const EspStatus& st) {
+  if (st.offline) return COL_GREY;
+  if (st.stuck || !st.loop) return COL_RED;
+  return COL_GREEN;
 }
 
 String fmtAgo(long ago_s) {
@@ -67,17 +64,6 @@ uint16_t personaColor(const String& persona) {
   return COL_WHITE;
 }
 
-// Scale an RGB565 color by num/den (for dimmed gauge zones / dot halo).
-static uint16_t dimColor(uint16_t c, uint8_t num, uint8_t den) {
-  uint8_t r = (c >> 11) & 0x1F;
-  uint8_t g = (c >> 5) & 0x3F;
-  uint8_t b = c & 0x1F;
-  r = (r * num) / den;
-  g = (g * num) / den;
-  b = (b * num) / den;
-  return (r << 11) | (g << 5) | b;
-}
-
 // Centered text helper (Adafruit GFX has no drawString/datum).
 static void centerText(Adafruit_ST7789& tft, const String& s, int y, uint8_t size) {
   tft.setTextSize(size);
@@ -94,32 +80,35 @@ static String titleText(const EspStatus& st) {
   return title;
 }
 
-static String providerText(const EspStatus& st) {
-  String p = st.provider.length() ? st.provider : "-";
-  if (p.length() > 9) p = p.substring(0, 9); // size-3 text must fit 170px
-  return p;
-}
-
 static String modelText(const EspStatus& st) {
   String m = st.model.length() ? st.model : "-";
-  // The provider is shown large above, so show the model basename
-  // ("org/MiniMax-M2.7" -> "MiniMax-M2.7"). Size-1 font fits 28 chars.
+  // Show the model basename ("org/MiniMax-M2.7" -> "MiniMax-M2.7").
+  // Size-1 font fits 28 chars.
   int slash = m.lastIndexOf('/');
   if (slash >= 0) m = m.substring(slash + 1);
   if (m.length() > 28) m = m.substring(0, 28);
   return m;
 }
 
-static int successPct(const EspStatus& st) {
-  int total = st.ok_n + st.fail_n;
-  if (total <= 0) return 0;
-  return (int)((st.ok_n * 100L) / total);
+static String llmAgoText(const EspStatus& st) {
+  return "last llm call " + fmtAgo(st.lastLlmCallFinished);
 }
 
-static uint16_t gaugeColor(int pct) {
-  if (pct >= 90) return COL_GREEN;
-  if (pct >= 60) return COL_YELLOW;
-  return COL_RED;
+static String actionText(const EspStatus& st) {
+  if (st.lastAction.length() == 0 || st.lastAction == "-") return "no action yet";
+  String ago = fmtAgo(st.lastActionAgoS);
+  // Size-1 font fits 28 chars; truncate the label, keep the freshness suffix.
+  int keep = 28 - (int)ago.length() - 1;
+  if (keep < 8) keep = 8;
+  String a = st.lastAction;
+  if ((int)a.length() > keep) a = a.substring(0, keep);
+  return a + " " + ago;
+}
+
+static uint8_t personaSize(const String& disp) {
+  if (disp.length() <= 2) return 4; // PM, QA — hero glyphs
+  if (disp.length() <= 7) return 3; // ENGINEER, REVIEW
+  return 2;
 }
 
 // --- boot -------------------------------------------------------------------
@@ -129,7 +118,7 @@ void uiBoot(Adafruit_ST7789& tft, const String& ssid) {
   tft.setTextWrap(false);
   centerText(tft, "esp-status", 122, 3);
   tft.setTextColor(COL_DGREY, COL_BLACK);
-  String sub = "v5 connecting " + ssid;
+  String sub = "v9 connecting " + ssid;
   if (sub.length() > 28) sub = sub.substring(0, 28);
   centerText(tft, sub, 162, 1);
 }
@@ -146,15 +135,16 @@ void uiBootStatus(Adafruit_ST7789& tft, const String& msg) {
 struct Snap {
   String title;
   String loopBadge;
-  String provider;
+  uint16_t headerC = 0;
   String model;
-  int pct = -1;
-  uint16_t gaugeC = 0;
+  uint16_t barsMask = 0; // bit i = llmStatus[i] (oldest first), valid < count
+  uint8_t llmCount = 0;
+  String llmAgo;
+  String action;
   String persona;
   uint16_t personaC = 0;
   uint8_t personaSize = 0;
-  String ago;
-  uint16_t color = 0;
+  bool stuck = false;
   bool offline = true;
   bool valid = false;
 };
@@ -186,155 +176,92 @@ static void drawCaption(Adafruit_ST7789& tft, const String& cap, int y) {
   centerText(tft, cap, y, 1);
 }
 
-static void drawProvider(Adafruit_ST7789& tft, const EspStatus& st) {
-  tft.fillRect(0, PROV_CAP_Y - 2, SCREEN_W, PROV_Y + 26 - PROV_CAP_Y + 2, COL_BLACK);
-  drawCaption(tft, "PROVIDER", PROV_CAP_Y);
-  tft.setTextColor(COL_CYAN, COL_BLACK);
-  centerText(tft, providerText(st), PROV_Y, 3);
-}
-
 static void drawModel(Adafruit_ST7789& tft, const EspStatus& st) {
-  // Small model line under the large provider (no caption — decluttered v5
-  // style). Band sits between the provider block and the gauge zone.
-  tft.fillRect(0, MODEL_Y - 4, SCREEN_W, GAUGE_ZONE_TOP - MODEL_Y, COL_BLACK);
+  // Small model line under the header (no caption — single line, v9 style).
+  tft.fillRect(0, TOP_H, SCREEN_W, LLM_CAP_Y - TOP_H, COL_BLACK);
   tft.setTextColor(COL_WHITE, COL_BLACK);
   centerText(tft, modelText(st), MODEL_Y, 1);
 }
 
-// --- speedometer gauge ------------------------------------------------------
-// Semicircle (180..360 deg): zone backdrop + value sweep,
-// 11 white major ticks only (no minor marks), white needle, colored hub.
-// pctF is animated (see uiDraw/uiTick); backdrop zones stay static.
-//
-// arcBand draws a SOLID annular sector: the band is tiled with small quads
-// (two fillTriangle each) instead of radial 1px lines from the center.
-// Radial lines leave 1px black pinholes at the outer edge because a 1 deg
-// step spans ~0.94px at R=54 and integer rounding opens gaps. Quad tiling
-// shares exact edge vertices between neighbours, so no gaps are possible.
-static void arcBand(Adafruit_ST7789& tft, float a0deg, float a1deg,
-                    int rOuter, int rInner, uint16_t color) {
-  float span = a1deg - a0deg;
-  if (span <= 0.0f) return;
-  // ~2 deg per quad: smooth at R=54 (chord error < 0.1px), few triangles.
-  int n = (int)ceilf(span / 2.0f);
-  if (n < 1) n = 1;
-  for (int i = 0; i < n; i++) {
-    float a = a0deg + span * (float)i / (float)n;
-    float b = a0deg + span * (float)(i + 1) / (float)n;
-    float ra = a * (float)M_PI / 180.0f;
-    float rb = b * (float)M_PI / 180.0f;
-    float ca = cosf(ra), sa = sinf(ra);
-    float cb = cosf(rb), sb = sinf(rb);
-    int x0i = GAUGE_CX + (int)(rInner * ca);
-    int y0i = GAUGE_CY + (int)(rInner * sa);
-    int x0o = GAUGE_CX + (int)(rOuter * ca);
-    int y0o = GAUGE_CY + (int)(rOuter * sa);
-    int x1i = GAUGE_CX + (int)(rInner * cb);
-    int y1i = GAUGE_CY + (int)(rInner * sb);
-    int x1o = GAUGE_CX + (int)(rOuter * cb);
-    int y1o = GAUGE_CY + (int)(rOuter * sb);
-    tft.fillTriangle(x0i, y0i, x0o, y0o, x1i, y1i, color);
-    tft.fillTriangle(x0o, y0o, x1o, y1o, x1i, y1i, color);
+// --- LLM outcome bars -------------------------------------------------------
+// Up to 10 bars, oldest left / newest right: green = success, red = failure.
+// Empty slots (fewer than 10 calls recorded) are dim outlines. The newest
+// bar gets a white top edge so recency is visible at a glance.
+static void drawBars(Adafruit_ST7789& tft, const EspStatus& st) {
+  tft.fillRect(0, LLM_CAP_Y - 2, SCREEN_W, BAR_TOP + BAR_H - LLM_CAP_Y + 2, COL_BLACK);
+  drawCaption(tft, "LLM", LLM_CAP_Y);
+  uint8_t n = st.llmCount > BAR_N ? BAR_N : st.llmCount;
+  for (uint8_t i = 0; i < BAR_N; i++) {
+    int x = BAR_X0 + i * (BAR_W + BAR_GAP);
+    if (i < n) {
+      uint16_t c = st.llmStatus[i] ? COL_GREEN : COL_RED;
+      tft.fillRect(x, BAR_TOP, BAR_W, BAR_H, c);
+      if (i == n - 1) tft.fillRect(x, BAR_TOP, BAR_W, 2, COL_WHITE);
+    } else {
+      tft.drawRect(x, BAR_TOP, BAR_W, BAR_H, COL_DGREY);
+    }
   }
 }
 
-static void drawSpeedometerAt(Adafruit_ST7789& tft, float pctF) {
-  tft.fillRect(0, GAUGE_ZONE_TOP, SCREEN_W, GAUGE_ZONE_BOT - GAUGE_ZONE_TOP, COL_BLACK);
-  if (pctF < 0) pctF = 0;
-  if (pctF > 100) pctF = 100;
-  int pct = (int)(pctF + 0.5f);
-  uint16_t gc = gaugeColor(pct);
-  const int rO = GAUGE_R, rI = GAUGE_R - 12;
-  // Zone backdrop: red 0-60% dim, yellow 60-90% + green 90-100% bright.
-  arcBand(tft, 180.0f, 288.0f, rO, rI, dimColor(COL_RED, 1, 4));
-  arcBand(tft, 288.0f, 342.0f, rO, rI, dimColor(COL_YELLOW, 1, 2));
-  arcBand(tft, 342.0f, 360.0f, rO, rI, dimColor(COL_GREEN, 1, 2));
-  // Bright value sweep (follows the animated needle).
-  arcBand(tft, 180.0f, 180.0f + 1.8f * pctF, rO, rI, gc);
-  // 11 major ticks only, white.
-  for (int i = 0; i <= 10; i++) {
-    float a = (180.0f + (float)i * 18.0f) * (float)M_PI / 180.0f;
-    float c = cosf(a), s = sinf(a);
-    tft.drawLine(GAUGE_CX + (int)((rO + 2) * c), GAUGE_CY + (int)((rO + 2) * s),
-                 GAUGE_CX + (int)((rO + 8) * c), GAUGE_CY + (int)((rO + 8) * s),
-                 COL_WHITE);
-  }
-  // Needle + hub.
-  float na = (180.0f + 1.8f * pctF) * (float)M_PI / 180.0f;
-  tft.drawLine(GAUGE_CX, GAUGE_CY,
-               GAUGE_CX + (int)((rI - 4) * cosf(na)),
-               GAUGE_CY + (int)((rI - 4) * sinf(na)), COL_WHITE);
-  tft.fillCircle(GAUGE_CX, GAUGE_CY, 7, gc);
-  tft.fillCircle(GAUGE_CX, GAUGE_CY, 3, COL_WHITE);
+static void drawLlmAgo(Adafruit_ST7789& tft, const EspStatus& st) {
+  tft.fillRect(0, LLM_AGO_Y - 4, SCREEN_W, ACT_Y - LLM_AGO_Y, COL_BLACK);
+  tft.setTextColor(COL_LGREY, COL_BLACK);
+  centerText(tft, llmAgoText(st), LLM_AGO_Y, 1);
 }
 
-static void drawSpeedometer(Adafruit_ST7789& tft, const EspStatus& st) {
-  drawSpeedometerAt(tft, (float)successPct(st));
-}
-
-// Needle animation state: uiDraw sets the target, uiTick eases shownPct
-// towards it so the arrow sweeps instead of jumping on every poll.
-static float shownPct = -1.0f; // currently displayed value (<0 = uninit)
-static float animFrom = 0.0f;
-static float animTo = 0.0f;
-static unsigned long animT0 = 0;
-static bool animating = false;
-static const unsigned long ANIM_MS = 700;
-
-static void startNeedleAnim(float target) {
-  if (shownPct < 0) {
-    shownPct = target;
-    animating = false;
-    return;
-  }
-  animFrom = shownPct;
-  animTo = target;
-  animT0 = millis();
-  animating = (animFrom != animTo);
-}
-
-static uint8_t personaSize(const String& disp) {
-  if (disp.length() <= 2) return 4; // PM, QA — hero glyphs
-  if (disp.length() <= 7) return 3; // ENGINEER, REVIEW
-  return 2;
+static void drawAction(Adafruit_ST7789& tft, const EspStatus& st) {
+  tft.fillRect(0, ACT_Y - 4, SCREEN_W, PERS_Y - 10 - ACT_Y + 4, COL_BLACK);
+  tft.setTextColor(COL_WHITE, COL_BLACK);
+  centerText(tft, actionText(st), ACT_Y, 1);
 }
 
 static void drawPersona(Adafruit_ST7789& tft, const EspStatus& st) {
-  // Persona glyph + large freshness; clears to the bottom (no footer).
-  tft.fillRect(0, PERS_Y - 10, SCREEN_W, SCREEN_H - (PERS_Y - 10), COL_BLACK);
+  // Persona glyph; clears down to the STUCK zone (freshness now lives in
+  // the llm/action lines above).
+  tft.fillRect(0, PERS_Y - 10, SCREEN_W, STUCK_ZONE_TOP - (PERS_Y - 10), COL_BLACK);
   String disp = personaDisplay(st.persona);
   uint16_t pc = personaColor(st.persona);
   tft.setTextColor(pc, COL_BLACK);
   centerText(tft, disp, PERS_Y, personaSize(disp));
-  tft.setTextColor(COL_LGREY, COL_BLACK);
-  centerText(tft, fmtAgo(st.ago_s), AGO_Y, 2);
+}
+
+static void drawStuck(Adafruit_ST7789& tft, const EspStatus& st) {
+  tft.fillRect(0, STUCK_ZONE_TOP, SCREEN_W, SCREEN_H - STUCK_ZONE_TOP, COL_BLACK);
+  if (!st.stuck) return;
+  tft.setTextColor(COL_RED, COL_BLACK);
+  centerText(tft, "STUCK", STUCK_Y, 4);
 }
 
 static void drawFull(Adafruit_ST7789& tft, const EspStatus& st, uint16_t c) {
   tft.fillScreen(COL_BLACK);
   tft.setTextWrap(false);
   drawTopBar(tft, st, c);
-  drawProvider(tft, st);
   drawModel(tft, st);
-  shownPct = (float)successPct(st);
-  animating = false;
-  drawSpeedometerAt(tft, shownPct);
+  drawBars(tft, st);
+  drawLlmAgo(tft, st);
+  drawAction(tft, st);
   drawPersona(tft, st);
+  drawStuck(tft, st);
 }
 
 static Snap snapOf(const EspStatus& st) {
   Snap cur;
   cur.title = titleText(st);
   cur.loopBadge = st.loop ? "ON" : "OFF";
-  cur.provider = providerText(st);
+  cur.headerC = headerColor(st);
   cur.model = modelText(st);
-  cur.pct = successPct(st);
-  cur.gaugeC = gaugeColor(cur.pct);
+  cur.barsMask = 0;
+  uint8_t n = st.llmCount > BAR_N ? BAR_N : st.llmCount;
+  for (uint8_t i = 0; i < n; i++) {
+    if (st.llmStatus[i]) cur.barsMask |= (uint16_t)(1u << i);
+  }
+  cur.llmCount = n;
+  cur.llmAgo = llmAgoText(st);
+  cur.action = actionText(st);
   cur.persona = personaDisplay(st.persona);
   cur.personaC = personaColor(st.persona);
   cur.personaSize = personaSize(cur.persona);
-  cur.ago = fmtAgo(st.ago_s);
-  cur.color = statusColor(st.offline ? "grey" : st.status);
+  cur.stuck = st.stuck;
   cur.offline = st.offline;
   cur.valid = true;
   return cur;
@@ -342,7 +269,7 @@ static Snap snapOf(const EspStatus& st) {
 
 void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg) {
   (void)errMsg; // no footer to show it on; offline state still greys the UI
-  uint16_t c = statusColor(st.offline ? "grey" : st.status);
+  uint16_t c = headerColor(st);
   tft.setTextWrap(false);
   Snap cur = snapOf(st);
 
@@ -353,36 +280,26 @@ void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg) {
   }
 
   // Top bar carries the loop status (ON/OFF + bar color) — no dot.
-  if (cur.color != prev.color || cur.title != prev.title || cur.loopBadge != prev.loopBadge) {
+  if (cur.headerC != prev.headerC || cur.title != prev.title || cur.loopBadge != prev.loopBadge) {
     drawTopBar(tft, st, c);
   }
-  if (cur.provider != prev.provider) drawProvider(tft, st);
   if (cur.model != prev.model) drawModel(tft, st);
-  if (cur.pct != prev.pct || cur.gaugeC != prev.gaugeC)
-    startNeedleAnim((float)cur.pct); // uiTick eases the arrow there
+  if (cur.barsMask != prev.barsMask || cur.llmCount != prev.llmCount) drawBars(tft, st);
+  if (cur.llmAgo != prev.llmAgo) drawLlmAgo(tft, st);
+  if (cur.action != prev.action) drawAction(tft, st);
   if (cur.persona != prev.persona || cur.personaC != prev.personaC ||
-      cur.personaSize != prev.personaSize || cur.ago != prev.ago)
+      cur.personaSize != prev.personaSize)
     drawPersona(tft, st);
+  if (cur.stuck != prev.stuck) drawStuck(tft, st);
 
   prev = cur;
 }
 
-// --- needle animation: eased sweep after every poll --------------------------
+// --- animation frame: v9 has no animated elements ---------------------------
 void uiTick(Adafruit_ST7789& tft, const EspStatus& st,
             unsigned long nowMs, unsigned long lastPollMs) {
+  (void)tft;
   (void)st;
+  (void)nowMs;
   (void)lastPollMs;
-  if (!animating || shownPct < 0) return;
-  unsigned long dt = (nowMs >= animT0) ? (nowMs - animT0) : 0;
-  float t = (float)dt / (float)ANIM_MS;
-  if (t >= 1.0f) {
-    shownPct = animTo;
-    animating = false;
-    drawSpeedometerAt(tft, shownPct);
-    return;
-  }
-  // Ease-out cubic: fast start, soft landing.
-  float e = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
-  shownPct = animFrom + (animTo - animFrom) * e;
-  drawSpeedometerAt(tft, shownPct);
 }

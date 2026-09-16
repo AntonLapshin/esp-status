@@ -1,8 +1,9 @@
 # esp-status — auto-pi pocket monitor for ESP32
 
 IdeaSpark ESP32 (16 MB + 1.9" ST7789 170×320 LCD) shows the live status of your
-autonomous `auto-pi` loop: project + loop badge, the LLM provider + model, a
-speedometer success gauge and the active persona hero glyph. It
+autonomous `auto-pi` loop: project + loop badge, the model, up to 10 green/red
+bars for the last LLM calls, the last GitHub-visible action, the active
+persona hero glyph and a large red STUCK banner when the loop is stuck. It
 polls a tiny JSON endpoint over your home WiFi every 15 seconds.
 
 ```
@@ -38,25 +39,26 @@ Verify the ESP endpoint (expect ~310 bytes of JSON):
 
 ```bash
 curl http://localhost:8787/api/esp-status
-# {"ok":true,"proj":"timeline","loop":true,"status":"green","provider":"joingonka","model":"deepseek-ai/DeepSeek-V4-Flash-0731","ok_n":9,"fail_n":1,"persona":"engineer","ago_s":47,...}
+# {"ok":true,"proj":"timeline","loop":true,"stuck":false,"persona":"engineer","model":"deepseek-ai/DeepSeek-V4-Flash-0731","lastAction":"pushed feat/foo","lastActionAgoS":300,"last10LlmStatus":[true,true,false,true],"lastLlmCallFinished":47}
 ```
 
 > Firewall: port `8787` must be reachable from the LAN. If `curl http://<DEV-LAN-IP>:8787/api/esp-status`
 > from the HOST machine fails, open the port (e.g. `sudo ufw allow 8787/tcp`).
 
-Status colors (decided server-side, ESP just draws them):
+Header colors:
 
 | Color | Meaning |
 |---|---|
-| 🟢 green | Loop running, activity < 15 min ago, last run healthy |
-| 🔴 red | Loop stopped, recent error, or stale > 15 min |
+| 🟢 green | Loop on and not stuck |
+| 🔴 red | Loop off, or stuck |
 | ⚫ grey | ESP offline (WiFi/HTTP failed) — ESP-side only |
 
-Screen layout (v5, top → bottom): header bar with project name + `ON`/`OFF`
-loop badge (loop status lives here, no dot) · `PROVIDER` large
-(e.g. `joingonka`) + small model line (e.g. `DeepSeek-V4-Flash-0731`) ·
-speedometer gauge (last-10 LLM calls as ok_n/fail_n, animated needle) · `PERSONA` hero
-glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`, …) + freshness (`47s ago`).
+Screen layout (v9, top → bottom): header bar with project name + `ON`/`OFF`
+loop badge · small model line (e.g. `DeepSeek-V4-Flash-0731`) · `LLM` caption +
+up to 10 outcome bars (green = success, red = failure, oldest left, newest
+right with a white top edge) · `last llm call 5m ago` freshness · last
+GitHub-visible action (e.g. `commit 3m ago`) · `PERSONA` hero glyph (`PM`,
+`ENGINEER`, `QA`, `REVIEW`, …) · large red `STUCK` banner when stuck.
 
 ## 2. HOST machine — get this repo
 
@@ -140,11 +142,12 @@ pio device monitor -b 115200
 
 ## 7. What you should see
 
-1. LCD shows `esp-status v5 / connecting <SSID>`, then your project name in the top bar with the `ON`/`OFF` loop badge.
-2. `PROVIDER` large (e.g. `joingonka`) + small model line (e.g. `MiniMax-M2.7`).
-3. Speedometer gauge (last-10 LLM calls ok_n/fail_n, animated needle).
-4. `PERSONA` hero glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`) + freshness (`47s ago`).
-5. Serial log prints `ok green timeline joingonka MiniMax-M2.7 9/10 engineer 47s` each poll.
+1. LCD shows `esp-status v9 / connecting <SSID>`, then your project name in the top bar with the `ON`/`OFF` loop badge.
+2. Small model line (e.g. `MiniMax-M2.7`).
+3. Up to 10 green/red bars for the last LLM calls (oldest left, newest right).
+4. `last llm call 5m ago` freshness + last action (e.g. `commit 3m ago`).
+5. `PERSONA` hero glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`); large red `STUCK` when stuck.
+6. Serial log prints `ok timeline ON engineer MiniMax-M2.7 llm47s act:pushed feat/foo 300s bars:4` each poll.
 
 ## Troubleshooting
 
@@ -164,7 +167,7 @@ esp-status/
   README.md                  ← you are here
   firmware/
     src/main.cpp             ← WiFi + HTTP poll + loop
-    src/ui.{h,cpp}           ← 170×320 portrait renderer (v5 layout)
+    src/ui.{h,cpp}           ← 170×320 portrait renderer (v9 layout)
     src/config.h             ← WiFi + SERVER_URL (edit me)
     platformio.ini           ← PlatformIO build (ST7789 flags)
     build-arduino-cli.sh     ← arduino-cli build/upload script

@@ -2,32 +2,27 @@
 #include <Arduino.h>
 #include <Adafruit_ST7789.h>
 
-// v7 layout contract (see server/ENDPOINT.md):
-//   Project (Loop) / Provider (large) + model (small) / speedometer gauge
-//   (ok_n/fail_n, animated needle, no text) / Persona glyph + freshness
-//   (large, no footer)
-//   Loop status lives in the header badge + bar color; no status dot.
-//   Gauge = ok_n / (ok_n + fail_n) over the last <=10 LLM calls (server-windowed).
+// v9 layout contract (see server/ENDPOINT.md):
+//   Project + ON/OFF loop badge (header) / model (small) / up to 10 LLM
+//   outcome bars (green=true, red=false, oldest left, newest right) /
+//   last-LLM-call freshness ("last llm call 5m ago") / last GitHub-visible
+//   action + freshness ("commit 3m ago") / persona glyph / large red STUCK
+//   banner when stuck.
 struct EspStatus {
   bool ok = false;
   String proj = "";
   bool loop = false;
-  String status = "red";   // green|red (server-side); grey only while offline
-  String provider = "-";   // effective LLM provider (e.g. joingonka)
-  String model = "-";      // effective LLM model, basename (e.g. MiniMax-M2.7)
-  int ok_n = 0;            // successful LLM calls in server-side last-10 window (gauge numerator)
-  int fail_n = 0;          // failed LLM calls in window (gauge denominator = ok_n + fail_n, max 10)
+  bool stuck = false;
   String persona = "-";    // pm | engineer | qa | review-engineer | ...
-  long ago_s = -1;
-  // Legacy fields (pre-v7 payloads): still parsed, no longer displayed.
-  // (`succ`/`total` were removed in v7 in favour of ok_n/fail_n.)
-  String last = "";
-  long tok_today = 0;
-  int err = 0;
+  String model = "-";      // effective LLM model, basename (e.g. MiniMax-M2.7)
+  String lastAction = "-"; // e.g. "pushed feat/foo" ("-" when none yet)
+  long lastActionAgoS = -1;
+  bool llmStatus[10];      // oldest first (reversed at parse); true=ok
+  uint8_t llmCount = 0;    // valid entries in llmStatus (0..10)
+  long lastLlmCallFinished = -1;
   bool offline = true;
 };
 
-uint16_t statusColor(const String& s);
 String fmtAgo(long ago_s);
 // "pm" -> "PM", "review-engineer" -> "REVIEW", ... (uppercase, truncated).
 String personaDisplay(const String& persona);
@@ -37,8 +32,7 @@ void uiBoot(Adafruit_ST7789& tft, const String& ssid);
 // Small boot-line update (no full wipe) — used while connecting to WiFi.
 void uiBootStatus(Adafruit_ST7789& tft, const String& msg);
 // Differential redraw: full frame once, then only dirty rects (no flicker).
-// The gauge needle animates towards new values in uiTick (ease-out sweep).
 void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg);
-// Needle animation frame (call every ~40ms). Kept as a no-op when idle.
+// Animation frame (call every ~40ms). v9 has no animated elements — no-op.
 void uiTick(Adafruit_ST7789& tft, const EspStatus& st,
             unsigned long nowMs, unsigned long lastPollMs);

@@ -128,11 +128,12 @@ arduino-cli monitor -p /dev/ttyUSB0 -c baudrate=115200
 ```
 
 Success signs (each poll, every 15 s):
-- LCD: `esp-status v5 / connecting <SSID>`, then top bar with project name +
-  `ON`/`OFF` loop badge, large PROVIDER + small model line, speedometer gauge,
-  persona glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`) + freshness (`47s ago`).
+- LCD: `esp-status v9 / connecting <SSID>`, then top bar with project name +
+  `ON`/`OFF` loop badge, small model line, up to 10 green/red LLM bars,
+  `last llm call 5m ago` freshness, last action (e.g. `commit 3m ago`),
+  persona glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`), red `STUCK` when stuck.
 - Serial: `esp-status boot`, `IP: 192.168.x.x`, then per poll:
-  `ok green timeline joingonka MiniMax-M2.7 9/10 engineer 47s`.
+  `ok timeline ON engineer MiniMax-M2.7 llm47s act:pushed feat/foo 300s bars:4`.
 
 ## 7. Troubleshooting matrix
 
@@ -150,8 +151,8 @@ Success signs (each poll, every 15 s):
 ## 8. File map (for agents)
 
 ```
-firmware/src/main.cpp        WiFi + HTTP poll + loop (pins, gauge window logic)
-firmware/src/ui.h, ui.cpp    170x320 portrait renderer (v5 layout)
+firmware/src/main.cpp        WiFi + HTTP poll + loop (pins, last-10 bar parsing)
+firmware/src/ui.h, ui.cpp    170x320 portrait renderer (v9 layout)
 firmware/src/config.h        WiFi + SERVER_URL — EDIT ME, do not commit secrets
 firmware/platformio.ini      PlatformIO env ideaspark-esp32 (huge_app.csv)
 firmware/build-arduino-cli.sh arduino-cli build/upload script (compile default, --upload <port> to flash)
