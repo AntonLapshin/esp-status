@@ -12,31 +12,32 @@
 #define COL_LGREY 0xC618
 #define COL_DGREY 0x7BEF
 
-// Layout v11 (170x320 portrait, works for rotation 0 and 2)
+// Layout v12 (170x320 portrait, works for rotation 0 and 2)
 //   header  -> project + ON/OFF loop badge (loop status lives here, no dot)
 //   model (size 2) / "PERSONA" caption (size 2) + up to 10 persona-run bars
 //   (green/red, right-aligned, solid grey bars on the left when < 10,
-//   newest rightmost with white top edge) / "P {ago}" persona freshness
-//   (size 2) / "LLM" caption (size 2) + up to 10 per-turn LLM bars (same
-//   style) / "L {ago}" LLM freshness (size 2) / last action + freshness
-//   (size 2) / persona glyph / large red STUCK banner when stuck
+//   newest rightmost with white top edge) / "Persona {ago}" freshness
+//   (size 2, right after the Persona bars) / "LLM" caption (size 2) +
+//   up to 10 per-turn LLM bars (same style) / "LLM {ago}" freshness
+//   (size 2) / last action + freshness (size 2) / persona glyph / large
+//   red STUCK banner when stuck. Every row has a breathing gap.
 #define TOP_H 28
-#define MODEL_Y 36
+#define MODEL_Y 34
 #define PERSONA_CAP_Y 56
-#define PERSONA_BAR_TOP 74
-#define LLM_CAP_Y 96
-#define LLM_BAR_TOP 114
+#define PERSONA_BAR_TOP 76
+#define PERSONA_AGO_Y 96
+#define LLM_CAP_Y 118
+#define LLM_BAR_TOP 138
 #define BAR_H 14
 #define BAR_W 13
 #define BAR_GAP 3
 #define BAR_N 10
 #define BAR_X0 ((SCREEN_W - (BAR_N * BAR_W + (BAR_N - 1) * BAR_GAP)) / 2)
-#define PERSONA_AGO_Y 136
-#define LLM_AGO_Y 152
-#define ACT_Y 172
-#define PERS_Y 204
-#define STUCK_ZONE_TOP 252
-#define STUCK_Y 260
+#define LLM_AGO_Y 158
+#define ACT_Y 180
+#define PERS_Y 206
+#define STUCK_ZONE_TOP 256
+#define STUCK_Y 264
 
 // Header bar: grey while offline, red when stuck or loop off, green when on.
 static uint16_t headerColor(const EspStatus& st) {
@@ -97,11 +98,11 @@ static String modelText(const EspStatus& st) {
 }
 
 static String personaAgoText(const EspStatus& st) {
-  return "P " + fmtAgo(st.lastPersonaCallFinished);
+  return "Persona " + fmtAgo(st.lastPersonaCallFinished);
 }
 
 static String llmAgoText(const EspStatus& st) {
-  return "L " + fmtAgo(st.lastLlmCallFinished);
+  return "LLM " + fmtAgo(st.lastLlmCallFinished);
 }
 
 static String actionText(const EspStatus& st) {
@@ -128,7 +129,7 @@ void uiBoot(Adafruit_ST7789& tft, const String& ssid) {
   tft.setTextWrap(false);
   centerText(tft, "esp-status", 122, 3);
   tft.setTextColor(COL_DGREY, COL_BLACK);
-  String sub = "v11 connecting " + ssid;
+  String sub = "v12 connecting " + ssid;
   if (sub.length() > 28) sub = sub.substring(0, 28);
   centerText(tft, sub, 162, 1);
 }
@@ -190,7 +191,7 @@ static void drawCaption(Adafruit_ST7789& tft, const String& cap, int y) {
 }
 
 static void drawModel(Adafruit_ST7789& tft, const EspStatus& st) {
-  // Model line under the header (size 2, v11 style).
+  // Model line under the header (size 2, v12 style).
   tft.fillRect(0, TOP_H, SCREEN_W, PERSONA_CAP_Y - TOP_H, COL_BLACK);
   tft.setTextColor(COL_WHITE, COL_BLACK);
   centerText(tft, modelText(st), MODEL_Y, 2);
@@ -230,13 +231,13 @@ static void drawLlmBars(Adafruit_ST7789& tft, const EspStatus& st) {
 }
 
 static void drawPersonaAgo(Adafruit_ST7789& tft, const EspStatus& st) {
-  tft.fillRect(0, PERSONA_AGO_Y - 2, SCREEN_W, LLM_AGO_Y - PERSONA_AGO_Y, COL_BLACK);
+  tft.fillRect(0, PERSONA_AGO_Y - 2, SCREEN_W, 20, COL_BLACK);
   tft.setTextColor(COL_LGREY, COL_BLACK);
   centerText(tft, personaAgoText(st), PERSONA_AGO_Y, 2);
 }
 
 static void drawLlmAgo(Adafruit_ST7789& tft, const EspStatus& st) {
-  tft.fillRect(0, LLM_AGO_Y - 2, SCREEN_W, ACT_Y - LLM_AGO_Y, COL_BLACK);
+  tft.fillRect(0, LLM_AGO_Y - 2, SCREEN_W, 20, COL_BLACK);
   tft.setTextColor(COL_LGREY, COL_BLACK);
   centerText(tft, llmAgoText(st), LLM_AGO_Y, 2);
 }
@@ -277,6 +278,8 @@ static void drawFull(Adafruit_ST7789& tft, const EspStatus& st, uint16_t c) {
   drawPersona(tft, st);
   drawStuck(tft, st);
 }
+// NOTE: drawFull order matches the top-to-bottom layout (persona freshness
+// sits right after the Persona bars, LLM freshness after the LLM bars).
 
 static Snap snapOf(const EspStatus& st) {
   Snap cur;
@@ -338,7 +341,7 @@ void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg) {
   prev = cur;
 }
 
-// --- animation frame: v11 has no animated elements ---------------------------
+// --- animation frame: v12 has no animated elements ---------------------------
 void uiTick(Adafruit_ST7789& tft, const EspStatus& st,
             unsigned long nowMs, unsigned long lastPollMs) {
   (void)tft;

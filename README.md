@@ -55,14 +55,15 @@ Header colors:
 | 🔴 red | Loop off, or stuck |
 | ⚫ grey | ESP offline (WiFi/HTTP failed) — ESP-side only |
 
-Screen layout (v11, top → bottom): header bar with project name + `ON`/`OFF`
+Screen layout (v12, top → bottom): header bar with project name + `ON`/`OFF`
 loop badge · small model line (e.g. `DeepSeek-V4-Flash-0731`) · `PERSONA`
 caption + up to 10 persona-run bars (green = success, red = failure,
 right-aligned with solid grey bars on the left when fewer than 10, newest
-right with a white top edge) · `P 5m ago` persona freshness · `LLM` caption +
-up to 10 per-turn LLM bars (same style) · `L 30s ago` LLM freshness · last
-GitHub-visible action (e.g. `commit 3m ago`) · `PERSONA` hero glyph (`PM`,
-`ENGINEER`, `QA`, `REVIEW`, …) · large red `STUCK` banner when stuck.
+right with a white top edge) · `Persona 5m ago` freshness right after the
+Persona bars · `LLM` caption + up to 10 per-turn LLM bars (same style) ·
+`LLM 30s ago` freshness · last GitHub-visible action (e.g. `commit 3m ago`) ·
+`PERSONA` hero glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`, …) · large red `STUCK`
+banner when stuck. Every row has a breathing gap.
 
 ## 2. HOST machine — get this repo
 
@@ -146,10 +147,10 @@ pio device monitor -b 115200
 
 ## 7. What you should see
 
-1. LCD shows `esp-status v11 / connecting <SSID>`, then your project name in the top bar with the `ON`/`OFF` loop badge.
+1. LCD shows `esp-status v12 / connecting <SSID>`, then your project name in the top bar with the `ON`/`OFF` loop badge.
 2. Small model line (e.g. `MiniMax-M2.7`).
-3. `PERSONA` row: up to 10 green/red bars for whole persona runs (right-aligned, grey bars on the left when fewer than 10) + `P 5m ago`.
-4. `LLM` row: up to 10 green/red bars for individual LLM turns (same style) + `L 30s ago`.
+3. `PERSONA` row: up to 10 green/red bars for whole persona runs (right-aligned, grey bars on the left when fewer than 10) + `Persona 5m ago` right after the bars.
+4. `LLM` row: up to 10 green/red bars for individual LLM turns (same style) + `LLM 30s ago`.
 5. Last action (e.g. `commit 3m ago`) + `PERSONA` hero glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`); large red `STUCK` when stuck.
 6. Serial log prints `ok timeline ON engineer MiniMax-M2.7 pers300s llm47s act:pushed feat/foo 300s pbars:4 lbars:5` each poll.
 
@@ -171,7 +172,7 @@ esp-status/
   README.md                  ← you are here
   firmware/
     src/main.cpp             ← WiFi + HTTP poll + loop
-    src/ui.{h,cpp}           ← 170×320 portrait renderer (v11 layout)
+    src/ui.{h,cpp}           ← 170×320 portrait renderer (v12 layout)
     src/config.h             ← WiFi + SERVER_URL (edit me)
     platformio.ini           ← PlatformIO build (ST7789 flags)
     build-arduino-cli.sh     ← arduino-cli build/upload script
