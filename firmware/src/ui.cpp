@@ -12,33 +12,36 @@
 #define COL_LGREY 0xC618
 #define COL_DGREY 0x7BEF
 
-// Layout v13 (170x320 portrait, works for rotation 0 and 2)
+// Layout v14 (170x320 portrait, works for rotation 0 and 2)
 //   header  -> project + ON/OFF loop badge (loop status lives here, no dot)
-//   model (size 2) / "PERSONA" caption (size 2) + up to 10 persona-run bars
-//   (green/red, right-aligned, solid grey bars on the left when < 10,
-//   newest rightmost with white top edge) / "{ago}" freshness
+//   model (size 2, 5px margin top/bottom) / "PERSONA" caption (size 2) +
+//   up to 9 persona-run history bars + 1 white ongoing bar (rightmost, always
+//   white for the current run; green/red history, right-aligned with solid
+//   grey bars on the left when < 9) / "{ago}" freshness
 //   (size 2, right after the Persona bars, no "Persona" prefix) / "LLM"
-//   caption (size 2) + up to 10 per-turn LLM bars (same style) / "{ago}"
-//   freshness (size 2, no "LLM" prefix) / last action + freshness (size 2) /
+//   caption (size 2) + up to 9 per-turn LLM history bars + 1 white ongoing
+//   bar (same style) / "{ago}" freshness (size 2, no "LLM" prefix) /
+//   last action + freshness (size 2, 5px margin top/bottom) /
 //   persona glyph / large red STUCK banner when stuck.
 //   Every section is separated by an explicit breathing gap.
 #define TOP_H 28
-#define MODEL_Y 34
-#define PERSONA_CAP_Y 58
-#define PERSONA_BAR_TOP 80
-#define PERSONA_AGO_Y 102
-#define LLM_CAP_Y 130
-#define LLM_BAR_TOP 152
-#define BAR_H 14
+#define MODEL_Y 39
+#define PERSONA_CAP_Y 68
+#define PERSONA_BAR_TOP 90
+#define PERSONA_AGO_Y 112
+#define LLM_CAP_Y 140
+#define LLM_BAR_TOP 162
+#define BAR_H 13
 #define BAR_W 13
 #define BAR_GAP 3
 #define BAR_N 10
+#define BAR_HIST_N (BAR_N - 1) // history slots; slot BAR_N-1 is always white ongoing
 #define BAR_X0 ((SCREEN_W - (BAR_N * BAR_W + (BAR_N - 1) * BAR_GAP)) / 2)
-#define LLM_AGO_Y 174
-#define ACT_Y 198
-#define PERS_Y 224
-#define STUCK_ZONE_TOP 264
-#define STUCK_Y 272
+#define LLM_AGO_Y 184
+#define ACT_Y 213
+#define PERS_Y 244
+#define STUCK_ZONE_TOP 284
+#define STUCK_Y 292
 
 // Header bar: grey while offline, red when stuck or loop off, green when on.
 static uint16_t headerColor(const EspStatus& st) {
@@ -130,7 +133,7 @@ void uiBoot(Adafruit_ST7789& tft, const String& ssid) {
   tft.setTextWrap(false);
   centerText(tft, "esp-status", 122, 3);
   tft.setTextColor(COL_DGREY, COL_BLACK);
-  String sub = "v13 connecting " + ssid;
+  String sub = "v14 connecting " + ssid;
   if (sub.length() > 28) sub = sub.substring(0, 28);
   centerText(tft, sub, 162, 1);
 }
@@ -192,29 +195,32 @@ static void drawCaption(Adafruit_ST7789& tft, const String& cap, int y) {
 }
 
 static void drawModel(Adafruit_ST7789& tft, const EspStatus& st) {
-  // Model line under the header (size 2, v13 style).
+  // Model line under the header (size 2, 5px margin top/bottom, v14 style).
   tft.fillRect(0, TOP_H, SCREEN_W, PERSONA_CAP_Y - TOP_H, COL_BLACK);
   tft.setTextColor(COL_WHITE, COL_BLACK);
   centerText(tft, modelText(st), MODEL_Y, 2);
 }
 
 // --- outcome bars -----------------------------------------------------------
-// Up to 10 bars, right-aligned: data ends at the newest (right), empty slots
-// (< 10 recorded) are solid grey bars on the left. Recorded bars are
-// green = success, red = failure. The newest bar gets a white top edge so
-// recency is visible at a glance. Both PERSONA and LLM rows share this style.
+// 10 square slots: first 9 are history (green = success, red = failure,
+// right-aligned, solid grey on the left when < 9 recorded), the rightmost
+// slot is always solid white for the ongoing call/run. When more than 9
+// history entries exist, the oldest are dropped so the newest history sits
+// next to the white ongoing bar. Both PERSONA and LLM rows share this style.
 static void drawBarRow(Adafruit_ST7789& tft, const bool* status, uint8_t count, int barTop) {
-  uint8_t n = count > BAR_N ? BAR_N : count;
-  uint8_t empty = BAR_N - n;
+  uint8_t n = count > BAR_HIST_N ? BAR_HIST_N : count;
+  uint8_t offset = count > BAR_HIST_N ? count - BAR_HIST_N : 0; // drop oldest beyond 9
+  uint8_t empty = BAR_HIST_N - n;
   for (uint8_t i = 0; i < BAR_N; i++) {
     int x = BAR_X0 + i * (BAR_W + BAR_GAP);
-    if (i < empty) {
+    if (i == BAR_N - 1) {
+      tft.fillRect(x, barTop, BAR_W, BAR_H, COL_WHITE); // ongoing call/run
+    } else if (i < empty) {
       tft.fillRect(x, barTop, BAR_W, BAR_H, COL_GREY);
     } else {
       uint8_t di = i - empty; // 0..n-1, oldest left, newest right
-      uint16_t c = status[di] ? COL_GREEN : COL_RED;
+      uint16_t c = status[offset + di] ? COL_GREEN : COL_RED;
       tft.fillRect(x, barTop, BAR_W, BAR_H, c);
-      if (di == n - 1) tft.fillRect(x, barTop, BAR_W, 2, COL_WHITE);
     }
   }
 }
@@ -289,16 +295,18 @@ static Snap snapOf(const EspStatus& st) {
   cur.headerC = headerColor(st);
   cur.model = modelText(st);
   cur.personaMask = 0;
-  uint8_t pn = st.personaCount > BAR_N ? BAR_N : st.personaCount;
+  uint8_t pn = st.personaCount > BAR_HIST_N ? BAR_HIST_N : st.personaCount;
+  uint8_t poff = st.personaCount > BAR_HIST_N ? st.personaCount - BAR_HIST_N : 0;
   for (uint8_t i = 0; i < pn; i++) {
-    if (st.personaStatus[i]) cur.personaMask |= (uint16_t)(1u << i);
+    if (st.personaStatus[poff + i]) cur.personaMask |= (uint16_t)(1u << i);
   }
   cur.personaCount = pn;
   cur.personaAgo = personaAgoText(st);
   cur.llmMask = 0;
-  uint8_t n = st.llmCount > BAR_N ? BAR_N : st.llmCount;
+  uint8_t n = st.llmCount > BAR_HIST_N ? BAR_HIST_N : st.llmCount;
+  uint8_t loff = st.llmCount > BAR_HIST_N ? st.llmCount - BAR_HIST_N : 0;
   for (uint8_t i = 0; i < n; i++) {
-    if (st.llmStatus[i]) cur.llmMask |= (uint16_t)(1u << i);
+    if (st.llmStatus[loff + i]) cur.llmMask |= (uint16_t)(1u << i);
   }
   cur.llmCount = n;
   cur.llmAgo = llmAgoText(st);
@@ -342,7 +350,7 @@ void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg) {
   prev = cur;
 }
 
-// --- animation frame: v13 has no animated elements ---------------------------
+// --- animation frame: v14 has no animated elements ---------------------------
 void uiTick(Adafruit_ST7789& tft, const EspStatus& st,
             unsigned long nowMs, unsigned long lastPollMs) {
   (void)tft;

@@ -41,9 +41,9 @@ GET http://<DEV-LAN-IP>:8787/api/esp-status
 | `model` | small model line (basename after `/`, max 28 chars) | effective pi model (config → `PI_*` env → pi settings → `health.jsonl`/`llm.jsonl` fallback) |
 | `lastAction` | last-action line, e.g. `commit 3m ago` (with `lastActionAgoS`) | newest GitHub-visible event (`issue.*`, `pr.*`, `label.*`, `git.push/commit/merge`); `-` when none yet |
 | `lastActionAgoS` | freshness suffix of the last-action line | seconds since `lastAction` (`-1` = never) |
-| `last10PersonaStatus` | PERSONA row: up to 10 bars, green=`true` / red=`false`, oldest left, newest right | up to 10 newest `health.jsonl` outcomes (one per whole persona-run invocation + one per retry), newest first on the wire; `[]` when none yet |
+| `last10PersonaStatus` | PERSONA row: up to 9 history bars + white ongoing bar, green=`true` / red=`false`, oldest left, newest history next to white | up to 10 newest `health.jsonl` outcomes (one per whole persona-run invocation + one per retry), newest first on the wire; `[]` when none yet |
 | `lastPersonaCallFinished` | `{ago}` line, right after the Persona bars (no "Persona" prefix) | seconds since the newest `health.jsonl` record (success or fail); `-1` when none yet |
-| `last10LlmStatus` | LLM row: up to 10 bars, green=`true` / red=`false`, oldest left, newest right | up to 10 newest `llm.jsonl` outcomes (one per finished individual LLM turn), newest first on the wire; `[]` when none yet |
+| `last10LlmStatus` | LLM row: up to 9 history bars + white ongoing bar, green=`true` / red=`false`, oldest left, newest history next to white | up to 10 newest `llm.jsonl` outcomes (one per finished individual LLM turn), newest first on the wire; `[]` when none yet |
 | `lastLlmCallFinished` | `{ago}` line (no "LLM" prefix) | seconds since the newest `llm.jsonl` record (success or fail); `-1` when none yet |
 
 v9 `last10LlmStatus`/`lastLlmCallFinished` meant whole persona runs and were
@@ -53,14 +53,15 @@ v8 fields (`status`, `state`, `ok_n`/`fail_n`, `run_id`/`run_ok_n`,
 `act`/`act_t`/`act_ago_s`, `ago_s`, `last`, `tok_today`, `err`, `at`) were
 removed in v9 — old firmware must upgrade.
 
-## Display mapping (firmware v13)
+## Display mapping (firmware v14)
 
 - Header: green = loop on and not stuck, red = stuck or loop off.
   `grey` is ESP-side only (WiFi/HTTP failed).
 - Persona colors: PM gold, engineer cyan, QA green, review magenta.
-- Bars: both PERSONA and LLM rows render the same way — filled green/red for
-  recorded outcomes, right-aligned (newest bar rightmost with a white top
-  edge); empty slots (fewer than 10 recorded) are solid grey bars on the left.
+- Bars: both PERSONA and LLM rows render the same way — 10 square slots:
+  first 9 are filled green/red history (right-aligned, solid grey on the left
+  when fewer than 9), the rightmost slot is always solid white for the ongoing
+  call/run.
 
 ## Errors
 

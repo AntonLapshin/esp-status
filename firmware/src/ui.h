@@ -2,14 +2,16 @@
 #include <Arduino.h>
 #include <Adafruit_ST7789.h>
 
-// v13 layout contract (see server/ENDPOINT.md):
-//   Project + ON/OFF loop badge (header) / model (size 2) / PERSONA caption +
-//   up to 10 persona-run outcome bars (green=true, red=false, oldest left,
-//   newest right, right-aligned with solid grey bars on the left when fewer
-//   than 10 recorded) / "{ago}" freshness (size 2, right after the
-//   Persona bars, no "Persona" prefix) / LLM caption + up to 10 per-turn LLM
-//   outcome bars (same style) / "{ago}" freshness (size 2, no "LLM" prefix) /
-//   last GitHub-visible action + freshness ("commit 3m ago", size 2) / persona
+// v14 layout contract (see server/ENDPOINT.md):
+//   Project + ON/OFF loop badge (header) / model (size 2, 5px margin top/bottom)
+//   / PERSONA caption + up to 9 persona-run history bars + 1 white ongoing bar
+//   (green=true, red=false, oldest left, newest right next to the white
+//   ongoing slot, right-aligned with solid grey bars on the left when fewer
+//   than 9 recorded) / "{ago}" freshness (size 2, right after the
+//   Persona bars, no "Persona" prefix) / LLM caption + up to 9 per-turn LLM
+//   history bars + 1 white ongoing bar (same style) / "{ago}" freshness
+//   (size 2, no "LLM" prefix) / last GitHub-visible action + freshness
+//   ("commit 3m ago", size 2, 5px margin top/bottom) / persona
 //   glyph / large red STUCK banner when stuck.
 //   Every section is separated by an explicit breathing gap.
 struct EspStatus {
@@ -40,6 +42,6 @@ void uiBoot(Adafruit_ST7789& tft, const String& ssid);
 void uiBootStatus(Adafruit_ST7789& tft, const String& msg);
 // Differential redraw: full frame once, then only dirty rects (no flicker).
 void uiDraw(Adafruit_ST7789& tft, const EspStatus& st, const String& errMsg);
-// Animation frame (call every ~40ms). v13 has no animated elements — no-op.
+// Animation frame (call every ~40ms). v14 has no animated elements — no-op.
 void uiTick(Adafruit_ST7789& tft, const EspStatus& st,
             unsigned long nowMs, unsigned long lastPollMs);
