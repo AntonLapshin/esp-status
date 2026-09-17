@@ -39,7 +39,7 @@ GET http://<DEV-LAN-IP>:8787/api/esp-status
 | `llmActive` | `working…` state (stale bars but child alive) | active run with a live `pi` child |
 | `persona` | hero glyph (`PM`, `ENGINEER`, `QA`, `REVIEW`, …) | active persona (started run wins, else last run) |
 | `model` | small model line (basename after `/`, max 28 chars) | effective pi model (config → `PI_*` env → pi settings → `health.jsonl`/`llm.jsonl` fallback) |
-| `lastAction` | last-action line, e.g. `commit 3m ago` (with `lastActionAgoS`) | newest GitHub-visible event (`issue.*`, `pr.*`, `git.push/commit/merge`); `-` when none yet |
+| `lastAction` | last-action line, e.g. `commit 3m ago` (with `lastActionAgoS`) | newest GitHub-visible event (`issue.*`, `pr.*`, `label.*`, `git.push/commit/merge`); `-` when none yet |
 | `lastActionAgoS` | freshness suffix of the last-action line | seconds since `lastAction` (`-1` = never) |
 | `last10PersonaStatus` | PERSONA row: up to 10 bars, green=`true` / red=`false`, oldest left, newest right | up to 10 newest `health.jsonl` outcomes (one per whole persona-run invocation + one per retry), newest first on the wire; `[]` when none yet |
 | `lastPersonaCallFinished` | `{ago}` line, right after the Persona bars (no "Persona" prefix) | seconds since the newest `health.jsonl` record (success or fail); `-1` when none yet |
